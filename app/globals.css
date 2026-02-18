@@ -915,6 +915,7 @@ body {
 }
 
 .modal-container {
+  position: relative;
   width: 100%;
   max-width: 560px;
   max-height: 90vh;
@@ -945,6 +946,29 @@ body {
 
 .modal-container::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.modal-close-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  z-index: 10;
+}
+
+.modal-close-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  transform: rotate(90deg);
 }
 
 .modal-container::-webkit-scrollbar-thumb {
@@ -1029,6 +1053,7 @@ body {
 }
 
 .form-input[type="number"] {
+  appearance: textfield;
   -moz-appearance: textfield;
 }
 
@@ -1139,6 +1164,52 @@ body {
 
 .results-actions .btn {
   flex: 1;
+}
+
+/* --- Essay Dropdown --- */
+.essay-section {
+  margin-top: 12px;
+}
+
+.essay-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent-primary-light);
+  font-family: var(--font-inter), sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  transition: color var(--transition-fast);
+}
+
+.essay-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.essay-toggle-btn span {
+  display: inline-block;
+  font-size: 0.7rem;
+  transition: transform var(--transition-base);
+}
+
+.essay-container {
+  margin-top: 8px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+  animation: fadeIn 0.3s ease;
 }
 
 /* --- Responsive --- */
