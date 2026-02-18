@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { jsPDF } from 'jspdf';
 
 // ─── Constants ─────────────────────────────────────────
 const WORDS_ATTEMPT_1 = ["Umbrella", "Catalyst", "Penguin", "Harmony", "Telescope", "Cinnamon", "Glacier", "Voltage", "Marmalade", "Silhouette"];
@@ -86,9 +87,25 @@ const RefreshIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
 );
 
+const DownloadIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+);
+
 // ─── Main Component ────────────────────────────────────
 export default function Home() {
   const [screen, setScreen] = useState('welcome');
+  const [showDemoModal, setShowDemoModal] = useState(false);
+  const [demographicInfo, setDemographicInfo] = useState({
+    name: '',
+    age: '',
+    sex: '',
+    major: '',
+    gpa: '',
+    englishFluency: 3,
+    languages: '',
+    readingFreq: 4,
+    writingFreq: 4,
+  });
 
   // Data — two different word lists for attempt 1 and 2
   const [words1, setWords1] = useState([]);
@@ -329,7 +346,18 @@ export default function Home() {
         <div className="orb orb-3" />
       </div>
 
-      {screen === 'welcome' && <WelcomeScreen onStart={startTest} />}
+      {screen === 'welcome' && <WelcomeScreen onStart={() => setShowDemoModal(true)} />}
+      {showDemoModal && (
+        <DemographicModal
+          info={demographicInfo}
+          onChange={setDemographicInfo}
+          onSubmit={() => {
+            setShowDemoModal(false);
+            startTest();
+          }}
+          onClose={() => setShowDemoModal(false)}
+        />
+      )}
 
       {screen === 'memo-study-1' && (
         <MemoStudyScreen words={words1} timer={memoStudyTimer1} attempt={1} />
@@ -402,6 +430,11 @@ export default function Home() {
           memoResults2={memoResults2}
           argResults={argResults}
           creResults={creResults}
+          demographicInfo={demographicInfo}
+          argInput={argInput}
+          creInput={creInput}
+          argPrompt={argPrompt}
+          crePrompt={crePrompt}
           onRetake={() => {
             setScreen('welcome');
             setMemoResults1(null);
@@ -452,6 +485,153 @@ function WelcomeScreen({ onStart }) {
         </button>
       </div>
     </section>
+  );
+}
+
+// ─── Demographic Modal ─────────────────────────────────
+function DemographicModal({ info, onChange, onSubmit, onClose }) {
+  const update = (field, value) => onChange({ ...info, [field]: value });
+  const isValid = info.name.trim() && info.age && info.sex;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-container" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Participant Information</h2>
+          <p className="screen-subtitle">Please fill in your details before starting the assessment.</p>
+        </div>
+        <div className="modal-form">
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Name <span className="required">*</span></label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Your full name"
+                value={info.name}
+                onChange={e => update('name', e.target.value)}
+              />
+            </div>
+            <div className="form-group form-group-sm">
+              <label className="form-label">Age <span className="required">*</span></label>
+              <input
+                type="number"
+                className="form-input"
+                placeholder="Age"
+                min="1"
+                max="120"
+                value={info.age}
+                onChange={e => update('age', e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Sex <span className="required">*</span></label>
+            <div className="btn-group">
+              {['Male', 'Female'].map(s => (
+                <button
+                  key={s}
+                  className={`btn-toggle ${info.sex === s ? 'active' : ''}`}
+                  onClick={() => update('sex', s)}
+                >{s}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Major / Faculty</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. Computer Science"
+              value={info.major}
+              onChange={e => update('major', e.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Academic Performance (GPA)</label>
+            <select
+              className="form-select"
+              value={info.gpa}
+              onChange={e => update('gpa', e.target.value)}
+            >
+              <option value="">Select GPA range</option>
+              <option value="Below 3">Below 3</option>
+              <option value="3 - 3.5">3 – 3.5</option>
+              <option value="3.5 - 4">3.5 – 4</option>
+              <option value="4 - 4.5">4 – 4.5</option>
+              <option value="4.5 - 5">4.5 – 5</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Self-perceived English Fluency</label>
+            <div className="btn-group">
+              {[1, 2, 3, 4, 5].map(n => (
+                <button
+                  key={n}
+                  className={`btn-toggle ${info.englishFluency === n ? 'active' : ''}`}
+                  onClick={() => update('englishFluency', n)}
+                >{n}</button>
+              ))}
+            </div>
+            <div className="scale-labels">
+              <span>Basic</span>
+              <span>Fluent</span>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Languages Spoken Fluently</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. English, Mandarin, Malay"
+              value={info.languages}
+              onChange={e => update('languages', e.target.value)}
+            />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Reading Frequency / Week</label>
+              <div className="btn-group">
+                {[1, 2, 3, 4, 5, 6, 7].map(n => (
+                  <button
+                    key={n}
+                    className={`btn-toggle btn-toggle-sm ${info.readingFreq === n ? 'active' : ''}`}
+                    onClick={() => update('readingFreq', n)}
+                  >{n}</button>
+                ))}
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Writing Frequency / Week</label>
+              <div className="btn-group">
+                {[1, 2, 3, 4, 5, 6, 7].map(n => (
+                  <button
+                    key={n}
+                    className={`btn-toggle btn-toggle-sm ${info.writingFreq === n ? 'active' : ''}`}
+                    onClick={() => update('writingFreq', n)}
+                  >{n}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button
+          className="btn btn-primary btn-lg modal-submit"
+          disabled={!isValid}
+          onClick={onSubmit}
+        >
+          <span>Start Assessment</span>
+          <ArrowIcon />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -575,7 +755,7 @@ function LoadingScreen({ progress, status, error }) {
   );
 }
 
-function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, onRetake }) {
+function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, demographicInfo, argInput, creInput, argPrompt, crePrompt, onRetake }) {
   const argDimensions = [
     { key: 'thesis_focus', label: 'Thesis & Focus' },
     { key: 'evidence_support', label: 'Evidence & Support' },
@@ -604,6 +784,225 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, onR
   const creTotal = creResults?.scores
     ? Object.values(creResults.scores).reduce((a, b) => a + b, 0)
     : 0;
+
+  // ── PDF Download ──
+  function downloadPDF() {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    const contentWidth = pageWidth - margin * 2;
+    let y = 20;
+
+    const checkPage = (needed = 20) => {
+      if (y + needed > doc.internal.pageSize.getHeight() - 20) {
+        doc.addPage();
+        y = 20;
+      }
+    };
+
+    // Header
+    doc.setFillColor(99, 102, 241);
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Intelligence Test — Results', margin, 27);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), pageWidth - margin, 27, { align: 'right' });
+    y = 52;
+
+    // Demographic Info
+    doc.setTextColor(99, 102, 241);
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Participant Information', margin, y);
+    y += 3;
+    doc.setDrawColor(99, 102, 241);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 8;
+
+    doc.setTextColor(60, 60, 60);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    const demoFields = [
+      ['Name', demographicInfo.name || '—'],
+      ['Age', demographicInfo.age || '—'],
+      ['Sex', demographicInfo.sex || '—'],
+      ['Major / Faculty', demographicInfo.major || '—'],
+      ['GPA Range', demographicInfo.gpa || '—'],
+      ['English Fluency', `${demographicInfo.englishFluency} / 5`],
+      ['Languages', demographicInfo.languages || '—'],
+      ['Reading Freq.', `${demographicInfo.readingFreq}x / week`],
+      ['Writing Freq.', `${demographicInfo.writingFreq}x / week`],
+    ];
+    demoFields.forEach(([label, value]) => {
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${label}:`, margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(value, margin + 45, y);
+      y += 6;
+    });
+    y += 6;
+
+    // Memorisation
+    checkPage(40);
+    doc.setTextColor(99, 102, 241);
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Memorisation — ${memoTotalScore}/${memoTotalPossible}`, margin, y);
+    y += 3;
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 8;
+
+    doc.setTextColor(60, 60, 60);
+    doc.setFontSize(10);
+    [{ label: 'Attempt 1', result: memoResults1 }, { label: 'Attempt 2', result: memoResults2 }].forEach(({ label, result }) => {
+      if (!result) return;
+      checkPage(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${label}: ${result.score}/${result.total}`, margin, y);
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(16, 185, 129);
+      doc.text(`Correct: ${result.matched.map(w => capitalizeFirst(w)).join(', ') || 'None'}`, margin + 4, y);
+      y += 5;
+      doc.setTextColor(239, 68, 68);
+      doc.text(`Missed: ${result.missed.map(w => capitalizeFirst(w)).join(', ') || 'None'}`, margin + 4, y);
+      y += 5;
+      if (result.wrong.length > 0) {
+        doc.setTextColor(245, 158, 11);
+        doc.text(`Incorrect: ${result.wrong.map(w => capitalizeFirst(w)).join(', ')}`, margin + 4, y);
+        y += 5;
+      }
+      doc.setTextColor(60, 60, 60);
+      y += 3;
+    });
+    y += 4;
+
+    // Argumentative Writing
+    checkPage(50);
+    doc.setTextColor(99, 102, 241);
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Argumentative Writing — ${argTotal}/20`, margin, y);
+    y += 3;
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 8;
+
+    doc.setTextColor(60, 60, 60);
+    doc.setFontSize(10);
+    if (argResults?.scores) {
+      doc.setFont('helvetica', 'italic');
+      doc.text(`Prompt: "${argPrompt}"`, margin, y);
+      y += 7;
+      doc.setFont('helvetica', 'normal');
+      argDimensions.forEach(d => {
+        checkPage();
+        const score = argResults.scores[d.key] || 1;
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${d.label}:`, margin + 4, y);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${score}/4`, margin + 60, y);
+        y += 5;
+      });
+      y += 3;
+      if (argResults.feedback) {
+        checkPage(20);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Feedback:', margin, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        const fbLines = doc.splitTextToSize(argResults.feedback, contentWidth - 4);
+        fbLines.forEach(line => {
+          checkPage();
+          doc.text(line, margin + 4, y);
+          y += 5;
+        });
+      }
+      // Written response
+      if (argInput && argInput.trim()) {
+        y += 4;
+        checkPage(20);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Written Response:', margin, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        const argLines = doc.splitTextToSize(argInput.trim(), contentWidth - 4);
+        argLines.forEach(line => {
+          checkPage();
+          doc.text(line, margin + 4, y);
+          y += 5;
+        });
+      }
+    } else {
+      doc.text('No writing submitted.', margin, y);
+    }
+    y += 8;
+
+    // Creative Writing
+    checkPage(50);
+    doc.setTextColor(99, 102, 241);
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Creative Writing — ${creTotal}/20`, margin, y);
+    y += 3;
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 8;
+
+    doc.setTextColor(60, 60, 60);
+    doc.setFontSize(10);
+    if (creResults?.scores) {
+      doc.setFont('helvetica', 'italic');
+      doc.text(`Prompt: "${crePrompt}"`, margin, y);
+      y += 7;
+      doc.setFont('helvetica', 'normal');
+      creDimensions.forEach(d => {
+        checkPage();
+        const score = creResults.scores[d.key] || 1;
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${d.label}:`, margin + 4, y);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${score}/4`, margin + 60, y);
+        y += 5;
+      });
+      y += 3;
+      if (creResults.feedback) {
+        checkPage(20);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Feedback:', margin, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        const fbLines = doc.splitTextToSize(creResults.feedback, contentWidth - 4);
+        fbLines.forEach(line => {
+          checkPage();
+          doc.text(line, margin + 4, y);
+          y += 5;
+        });
+      }
+      // Written response
+      if (creInput && creInput.trim()) {
+        y += 4;
+        checkPage(20);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Written Response:', margin, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        const creLines = doc.splitTextToSize(creInput.trim(), contentWidth - 4);
+        creLines.forEach(line => {
+          checkPage();
+          doc.text(line, margin + 4, y);
+          y += 5;
+        });
+      }
+    } else {
+      doc.text('No writing submitted.', margin, y);
+    }
+
+    const safeName = (demographicInfo.name || 'participant').replace(/[^a-zA-Z0-9]/g, '_');
+    doc.save(`Intelligence_Test_${safeName}.pdf`);
+  }
 
   return (
     <section className="screen" key="results">
@@ -705,10 +1104,16 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, onR
           )}
         </div>
 
-        <button className="btn btn-primary btn-lg" onClick={onRetake}>
-          <span>Retake Assessment</span>
-          <RefreshIcon />
-        </button>
+        <div className="results-actions">
+          <button className="btn btn-secondary btn-lg" onClick={downloadPDF}>
+            <DownloadIcon />
+            <span>Download PDF</span>
+          </button>
+          <button className="btn btn-primary btn-lg" onClick={onRetake}>
+            <span>Retake Assessment</span>
+            <RefreshIcon />
+          </button>
+        </div>
       </div>
     </section>
   );
