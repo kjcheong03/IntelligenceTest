@@ -4,14 +4,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
 
 // ─── Constants ─────────────────────────────────────────
-const DSB_START_LEVEL = 3;
-const DSB_LEVELS = [3, 5, 7]; // Fixed variations requested
-const DSB_DIGIT_DISPLAY_MS = 1000;
+const DSB_START_LEVEL = 5;
+const DSB_LEVELS = [5, 7, 9]; // Updated to [5, 7, 9]
 
 const OSPAN_LETTERS = ['F', 'H', 'J', 'K', 'L', 'N', 'P', 'Q', 'R', 'S', 'T', 'Y'];
 const OSPAN_EQUATION_TIME = 8;
 const OSPAN_LETTER_DISPLAY_MS = 1500;
-const OSPAN_SET_SIZES = [3, 5, 7]; // Fixed variations requested
+const OSPAN_SET_SIZES = [5, 7, 9]; // Updated to [5, 7, 9]
 
 const ARG_PROMPT = "Social media has done more harm than good to modern society.";
 const CRE_PROMPT = "Describe Red";
@@ -209,9 +208,12 @@ export default function Home() {
       setTimeout(() => dsbInputRef.current?.focus(), 100);
       return;
     }
-    const t = setTimeout(() => setDsbDisplayIndex(p => p + 1), DSB_DIGIT_DISPLAY_MS);
+    // Dynamic speed: Slower for lower levels (5), faster for higher (9)
+    // 5 -> 1200ms, 7 -> 900ms, 9 -> 600ms
+    const delay = dsbLevel <= 5 ? 1200 : dsbLevel <= 7 ? 900 : 600;
+    const t = setTimeout(() => setDsbDisplayIndex(p => p + 1), delay);
     return () => clearTimeout(t);
-  }, [screen, dsbDisplayIndex, dsbSequence.length]);
+  }, [screen, dsbDisplayIndex, dsbSequence.length, dsbLevel]);
 
   // ── OSPAN: Letter auto-advance ──
   useEffect(() => {
@@ -682,7 +684,7 @@ function OSPANEquationScreen({ trial, trialIdx, totalTrials, pairIdx, timer, onA
         <div className="screen-header">
           <div className="task-badge">Task 2 of {TOTAL_TASKS} — Set {trialIdx + 1} of {totalTrials}</div>
           <h2>Operation Span</h2>
-          <p className="screen-subtitle">Is this equation correct? ({pairIdx + 1} of {trial.size})</p>
+          <p className="screen-subtitle">Is this equation correct? ({pairIdx + 1} of {trial.size}) — Time: <span style={{ color: timer.remaining <= 3 ? 'var(--danger)' : 'inherit', fontWeight: 600 }}>{timer.remaining}s</span></p>
         </div>
         <div className="ospan-timer-bar">
           <div className="ospan-timer-fill" style={{ width: `${pct}%` }} />

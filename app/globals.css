@@ -1226,11 +1226,11 @@ body {
 }
 
 .dsb-digit-display {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 200px;
+  height: 300px;
+  overflow: hidden;
 }
 
 .dsb-digit {
