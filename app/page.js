@@ -4,15 +4,19 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
 
 // ─── Constants ─────────────────────────────────────────
-const WORDS_ATTEMPT_1 = ["Umbrella", "Catalyst", "Penguin", "Harmony", "Telescope", "Cinnamon", "Glacier", "Voltage", "Marmalade", "Silhouette"];
-const WORDS_ATTEMPT_2 = ["Chandelier", "Molecule", "Falcon", "Burgundy", "Compass", "Lavender", "Tornado", "Frequency", "Porcelain", "Blueprint"];
+const DSB_START_LEVEL = 3;
+const DSB_LEVELS = [3, 5, 7]; // Fixed variations requested
+const DSB_DIGIT_DISPLAY_MS = 1000;
+
+const OSPAN_LETTERS = ['F', 'H', 'J', 'K', 'L', 'N', 'P', 'Q', 'R', 'S', 'T', 'Y'];
+const OSPAN_EQUATION_TIME = 8;
+const OSPAN_LETTER_DISPLAY_MS = 1500;
+const OSPAN_SET_SIZES = [3, 5, 7]; // Fixed variations requested
 
 const ARG_PROMPT = "Social media has done more harm than good to modern society.";
 const CRE_PROMPT = "Describe Red";
-
-const MEMO_STUDY_TIME = 30;
-const MEMO_RECALL_TIME = 60;
 const WRITING_TIME = 600;
+const TOTAL_TASKS = 4;
 
 
 
@@ -28,6 +32,53 @@ function countWords(text) {
 
 function capitalizeFirst(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function generateDSBSequence(length) {
+  const digits = [];
+  for (let i = 0; i < length; i++) {
+    let d;
+    do { d = Math.floor(Math.random() * 9) + 1; } while (i > 0 && d === digits[i - 1]);
+    digits.push(d);
+  }
+  return digits;
+}
+
+function generateEquation() {
+  const ops = ['+', '−', '×'];
+  const opIdx = Math.floor(Math.random() * 3);
+  const a = Math.floor(Math.random() * 9) + 1;
+  const b = opIdx === 1 ? Math.floor(Math.random() * a) + 1 : Math.floor(Math.random() * 9) + 1;
+  let mid;
+  if (opIdx === 0) mid = a + b;
+  else if (opIdx === 1) mid = a - b;
+  else mid = a * b;
+  const op2 = Math.random() > 0.5 ? '+' : '−';
+  const c = Math.floor(Math.random() * 5) + 1;
+  const correct = op2 === '+' ? mid + c : mid - c;
+  const isCorrect = Math.random() > 0.5;
+  let shown = correct;
+  if (!isCorrect) {
+    const off = (Math.floor(Math.random() * 3) + 1) * (Math.random() > 0.5 ? 1 : -1);
+    shown = correct + off;
+    if (shown === correct) shown += 1;
+  }
+  return { text: `(${a} ${ops[opIdx]} ${b}) ${op2} ${c} = ${shown}`, isCorrect };
+}
+
+function generateOSPANTrials(setSizes) {
+  // Use fixed order as requested
+  return setSizes.map(size => {
+    const avail = [...OSPAN_LETTERS];
+    const letters = [];
+    for (let i = 0; i < size; i++) {
+      const idx = Math.floor(Math.random() * avail.length);
+      letters.push(avail.splice(idx, 1)[0]);
+    }
+    const equations = [];
+    for (let i = 0; i < size; i++) equations.push(generateEquation());
+    return { size, letters, equations };
+  });
 }
 
 // ─── Timer Hook ────────────────────────────────────────
@@ -100,32 +151,33 @@ export default function Home() {
   const [screen, setScreen] = useState('welcome');
   const [showDemoModal, setShowDemoModal] = useState(false);
   const [demographicInfo, setDemographicInfo] = useState({
-    name: '',
-    age: '',
-    sex: '',
-    major: '',
-    gpa: '',
-    englishFluency: 3,
-    languages: '',
-    readingFreq: 4,
-    writingFreq: 4,
+    name: '', age: '', sex: '', major: '', gpa: '',
+    englishFluency: 3, languages: '', readingFreq: 4, writingFreq: 4,
   });
 
-  // Data — two different word lists for attempt 1 and 2
-  const [words1, setWords1] = useState([]);
-  const [words2, setWords2] = useState([]);
+  // DSB State
+  const [dsbTrialIdx, setDsbTrialIdx] = useState(0); // Track progress through [3, 5, 7]
+  const [dsbLevel, setDsbLevel] = useState(DSB_LEVELS[0]);
+  const [dsbSequence, setDsbSequence] = useState([]);
+  const [dsbDisplayIndex, setDsbDisplayIndex] = useState(-1);
+  const [dsbUserInput, setDsbUserInput] = useState('');
+  const [dsbResults, setDsbResults] = useState([]);
+  const [dsbMaxSpan, setDsbMaxSpan] = useState(0);
+
+  // OSPAN State
+  const [ospanTrials, setOspanTrials] = useState([]);
+  const [ospanTrialIdx, setOspanTrialIdx] = useState(0);
+  const [ospanPairIdx, setOspanPairIdx] = useState(0);
+  const [ospanEqResults, setOspanEqResults] = useState([]);
+  const [ospanRecalled, setOspanRecalled] = useState([]);
+  const [ospanResults, setOspanResults] = useState([]);
+  const hasAnsweredEq = useRef(false);
+
+  // Writing State
   const [argPrompt, setArgPrompt] = useState('');
   const [crePrompt, setCrePrompt] = useState('');
-
-  // User inputs — separate recall for each attempt
-  const [recallInput1, setRecallInput1] = useState('');
-  const [recallInput2, setRecallInput2] = useState('');
   const [argInput, setArgInput] = useState('');
   const [creInput, setCreInput] = useState('');
-
-  // Results — separate memo results for each attempt
-  const [memoResults1, setMemoResults1] = useState(null);
-  const [memoResults2, setMemoResults2] = useState(null);
   const [argResults, setArgResults] = useState(null);
   const [creResults, setCreResults] = useState(null);
 
@@ -134,134 +186,159 @@ export default function Home() {
   const [loadingStatus, setLoadingStatus] = useState('');
   const [loadingError, setLoadingError] = useState(null);
 
-  // Refs for auto-submit guards
-  const recallRef = useRef(null);
+  // Refs
+  const dsbInputRef = useRef(null);
   const argRef = useRef(null);
   const creRef = useRef(null);
-  const hasSubmittedRecall1 = useRef(false);
-  const hasSubmittedRecall2 = useRef(false);
   const hasSubmittedArg = useRef(false);
   const hasSubmittedCre = useRef(false);
 
   // Timers
-  const memoStudyTimer1 = useTimer(MEMO_STUDY_TIME, () => goToRecall1());
-  const memoRecallTimer1 = useTimer(MEMO_RECALL_TIME, () => {
-    if (!hasSubmittedRecall1.current) submitMemoRecall1();
+  const ospanEqTimer = useTimer(OSPAN_EQUATION_TIME, () => {
+    if (!hasAnsweredEq.current) { hasAnsweredEq.current = true; handleOspanEqTimeout(); }
   });
-  const memoStudyTimer2 = useTimer(MEMO_STUDY_TIME, () => goToRecall2());
-  const memoRecallTimer2 = useTimer(MEMO_RECALL_TIME, () => {
-    if (!hasSubmittedRecall2.current) submitMemoRecall2();
-  });
-  const argTimer = useTimer(WRITING_TIME, () => {
-    if (!hasSubmittedArg.current) submitArgumentative();
-  });
-  const creTimer = useTimer(WRITING_TIME, () => {
-    if (!hasSubmittedCre.current) submitCreative();
-  });
+  const argTimer = useTimer(WRITING_TIME, () => { if (!hasSubmittedArg.current) submitArgumentative(); });
+  const creTimer = useTimer(WRITING_TIME, () => { if (!hasSubmittedCre.current) submitCreative(); });
+
+  // ── DSB: Animate digit display ──
+  useEffect(() => {
+    if (screen !== 'dsb-display') return;
+    if (dsbDisplayIndex >= dsbSequence.length) {
+      setScreen('dsb-input');
+      setDsbUserInput('');
+      setTimeout(() => dsbInputRef.current?.focus(), 100);
+      return;
+    }
+    const t = setTimeout(() => setDsbDisplayIndex(p => p + 1), DSB_DIGIT_DISPLAY_MS);
+    return () => clearTimeout(t);
+  }, [screen, dsbDisplayIndex, dsbSequence.length]);
+
+  // ── OSPAN: Letter auto-advance ──
+  useEffect(() => {
+    if (screen !== 'ospan-letter') return;
+    const t = setTimeout(() => {
+      const trial = ospanTrials[ospanTrialIdx];
+      if (!trial) return;
+      if (ospanPairIdx + 1 < trial.size) {
+        setOspanPairIdx(p => p + 1);
+        hasAnsweredEq.current = false;
+        setScreen('ospan-equation');
+        ospanEqTimer.start(OSPAN_EQUATION_TIME);
+      } else {
+        setOspanRecalled([]);
+        setScreen('ospan-recall');
+      }
+    }, OSPAN_LETTER_DISPLAY_MS);
+    return () => clearTimeout(t);
+  }, [screen, ospanPairIdx, ospanTrialIdx, ospanTrials]);
 
   // ── Start Test ──
   function startTest() {
-    setWords1(WORDS_ATTEMPT_1);
-    setWords2(WORDS_ATTEMPT_2);
-    setArgPrompt(ARG_PROMPT);
-    setCrePrompt(CRE_PROMPT);
-    setRecallInput1('');
-    setRecallInput2('');
-    setArgInput('');
-    setCreInput('');
-    hasSubmittedRecall1.current = false;
-    hasSubmittedRecall2.current = false;
-    hasSubmittedArg.current = false;
-    hasSubmittedCre.current = false;
-    setScreen('memo-study-1');
-    memoStudyTimer1.start(MEMO_STUDY_TIME);
+    setDsbTrialIdx(0);
+    const startLevel = DSB_LEVELS[0];
+    const seq = generateDSBSequence(startLevel);
+    setDsbLevel(startLevel);
+    setDsbSequence(seq);
+    setDsbDisplayIndex(0);
+    setDsbResults([]);
+    setDsbMaxSpan(0);
+    setDsbUserInput('');
+    setOspanTrials(generateOSPANTrials(OSPAN_SET_SIZES));
+    setOspanTrialIdx(0); setOspanPairIdx(0);
+    setOspanEqResults([]); setOspanRecalled([]); setOspanResults([]);
+    setArgPrompt(ARG_PROMPT); setCrePrompt(CRE_PROMPT);
+    setArgInput(''); setCreInput('');
+    hasSubmittedArg.current = false; hasSubmittedCre.current = false;
+    setScreen('dsb-display');
   }
 
-  // ── Attempt 1: Go to Recall ──
-  function goToRecall1() {
-    setScreen('memo-recall-1');
-    memoRecallTimer1.start(MEMO_RECALL_TIME);
-    setTimeout(() => recallRef.current?.focus(), 100);
-  }
-
-  // ── Attempt 1: Submit Recall → Start Attempt 2 ──
-  function submitMemoRecall1() {
-    if (hasSubmittedRecall1.current) return;
-    hasSubmittedRecall1.current = true;
-    memoRecallTimer1.stop();
-
-    const recalled = recallInput1
-      .split(/[,\n]+/)
-      .map(w => w.trim().toLowerCase())
-      .filter(w => w.length > 0);
-
-    const correctWords = words1.map(w => w.toLowerCase());
-    const matched = [];
-    const wrong = [];
-
-    recalled.forEach(r => {
-      if (correctWords.includes(r) && !matched.includes(r)) {
-        matched.push(r);
-      } else if (!correctWords.includes(r)) {
-        wrong.push(r);
+  // ── DSB: Submit answer ──
+  function submitDSBAnswer() {
+    const reversed = [...dsbSequence].reverse();
+    const userDigits = dsbUserInput.split('').map(Number).filter(n => !isNaN(n));
+    let numCorrect = 0;
+    for (let i = 0; i < reversed.length; i++) {
+      if (i < userDigits.length && userDigits[i] === reversed[i]) {
+        numCorrect++;
       }
-    });
+    }
+    const isCorrect = reversed.length === userDigits.length && numCorrect === reversed.length;
+    const attempt = { level: dsbLevel, sequence: [...dsbSequence], reversed, userAnswer: userDigits, correct: isCorrect, numCorrect };
+    const newResults = [...dsbResults, attempt];
+    setDsbResults(newResults);
 
-    setMemoResults1({
-      score: matched.length,
-      total: words1.length,
-      matched,
-      missed: correctWords.filter(w => !matched.includes(w)),
-      wrong,
-    });
+    if (isCorrect && dsbLevel > dsbMaxSpan) {
+      setDsbMaxSpan(dsbLevel);
+    }
 
-    // Go to attempt 2
-    setScreen('memo-study-2');
-    memoStudyTimer2.start(MEMO_STUDY_TIME);
+    // Move to next fixed level regardless of success/failure (battery style)
+    const nextIdx = dsbTrialIdx + 1;
+    if (nextIdx < DSB_LEVELS.length) {
+      setDsbTrialIdx(nextIdx);
+      const nextLevel = DSB_LEVELS[nextIdx];
+      setDsbLevel(nextLevel);
+      setDsbSequence(generateDSBSequence(nextLevel));
+      setDsbDisplayIndex(0);
+      setScreen('dsb-display');
+    } else {
+      startOSPAN();
+    }
   }
 
-  // ── Attempt 2: Go to Recall ──
-  function goToRecall2() {
-    setScreen('memo-recall-2');
-    memoRecallTimer2.start(MEMO_RECALL_TIME);
-    setTimeout(() => recallRef.current?.focus(), 100);
+  // ── Start OSPAN ──
+  function startOSPAN() {
+    setOspanTrialIdx(0); setOspanPairIdx(0);
+    setOspanEqResults([]); setOspanRecalled([]);
+    hasAnsweredEq.current = false;
+    setScreen('ospan-equation');
+    ospanEqTimer.start(OSPAN_EQUATION_TIME);
   }
 
-  // ── Attempt 2: Submit Recall → Go to Argumentative ──
-  function submitMemoRecall2() {
-    if (hasSubmittedRecall2.current) return;
-    hasSubmittedRecall2.current = true;
-    memoRecallTimer2.stop();
+  // ── OSPAN: equation answer ──
+  function handleOspanEqAnswer(userAnswer) {
+    if (hasAnsweredEq.current) return;
+    hasAnsweredEq.current = true;
+    ospanEqTimer.stop();
+    const trial = ospanTrials[ospanTrialIdx];
+    const eq = trial.equations[ospanPairIdx];
+    setOspanEqResults(p => [...p, userAnswer === eq.isCorrect]);
+    setScreen('ospan-letter');
+  }
 
-    const recalled = recallInput2
-      .split(/[,\n]+/)
-      .map(w => w.trim().toLowerCase())
-      .filter(w => w.length > 0);
+  function handleOspanEqTimeout() {
+    ospanEqTimer.stop();
+    setOspanEqResults(p => [...p, false]);
+    setScreen('ospan-letter');
+  }
 
-    const correctWords = words2.map(w => w.toLowerCase());
-    const matched = [];
-    const wrong = [];
+  // ── OSPAN: submit recall ──
+  function submitOSPANRecall() {
+    const trial = ospanTrials[ospanTrialIdx];
+    let lettersCorrect = 0;
+    for (let i = 0; i < trial.letters.length; i++) {
+      if (i < ospanRecalled.length && ospanRecalled[i] === trial.letters[i]) lettersCorrect++;
+    }
+    const mathCorrect = ospanEqResults.filter(Boolean).length;
+    const result = {
+      setSize: trial.size, correctLetters: trial.letters,
+      recalledLetters: [...ospanRecalled], lettersCorrect,
+      allCorrect: lettersCorrect === trial.letters.length,
+      mathCorrect, mathTotal: trial.size, eqResults: [...ospanEqResults],
+    };
+    const newResults = [...ospanResults, result];
+    setOspanResults(newResults);
 
-    recalled.forEach(r => {
-      if (correctWords.includes(r) && !matched.includes(r)) {
-        matched.push(r);
-      } else if (!correctWords.includes(r)) {
-        wrong.push(r);
-      }
-    });
-
-    setMemoResults2({
-      score: matched.length,
-      total: words2.length,
-      matched,
-      missed: correctWords.filter(w => !matched.includes(w)),
-      wrong,
-    });
-
-    // Go to argumentative writing
-    setScreen('argumentative');
-    argTimer.start(WRITING_TIME);
-    setTimeout(() => argRef.current?.focus(), 100);
+    if (ospanTrialIdx + 1 < ospanTrials.length) {
+      setOspanTrialIdx(p => p + 1);
+      setOspanPairIdx(0); setOspanEqResults([]); setOspanRecalled([]);
+      hasAnsweredEq.current = false;
+      setScreen('ospan-equation');
+      ospanEqTimer.start(OSPAN_EQUATION_TIME);
+    } else {
+      setScreen('argumentative');
+      argTimer.start(WRITING_TIME);
+      setTimeout(() => argRef.current?.focus(), 100);
+    }
   }
 
   // ── Submit Argumentative ──
@@ -288,165 +365,106 @@ export default function Home() {
     setLoadingProgress(10);
     setLoadingStatus('Grading argumentative writing...');
     setLoadingError(null);
-
     try {
-      let argResult = null;
-      let creResult = null;
-
+      let argResult = null, creResult = null;
       if (argInput.trim().length > 0) {
-        const argRes = await fetch('/api/grade', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'argumentative', prompt: argPrompt, text: argInput }),
+        const r = await fetch('/api/grade', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'argumentative', prompt: argPrompt, text: argInput })
         });
-        if (!argRes.ok) {
-          const err = await argRes.json();
-          throw new Error(err.error || 'Failed to grade argumentative writing');
-        }
-        argResult = await argRes.json();
+        if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Failed to grade argumentative writing'); }
+        argResult = await r.json();
       }
-
-      setLoadingProgress(55);
-      setLoadingStatus('Grading creative writing...');
-
+      setLoadingProgress(55); setLoadingStatus('Grading creative writing...');
       if (creInput.trim().length > 0) {
-        const creRes = await fetch('/api/grade', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'creative', prompt: crePrompt, text: creInput }),
+        const r = await fetch('/api/grade', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'creative', prompt: crePrompt, text: creInput })
         });
-        if (!creRes.ok) {
-          const err = await creRes.json();
-          throw new Error(err.error || 'Failed to grade creative writing');
-        }
-        creResult = await creRes.json();
+        if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Failed to grade creative writing'); }
+        creResult = await r.json();
       }
-
-      setLoadingProgress(90);
-      setLoadingStatus('Preparing your results...');
-      setArgResults(argResult);
-      setCreResults(creResult);
-
+      setLoadingProgress(90); setLoadingStatus('Preparing your results...');
+      setArgResults(argResult); setCreResults(creResult);
       await new Promise(r => setTimeout(r, 600));
-      setLoadingProgress(100);
-      await new Promise(r => setTimeout(r, 300));
-
+      setLoadingProgress(100); await new Promise(r => setTimeout(r, 300));
       setScreen('thanks');
     } catch (err) {
       console.error('Grading error:', err);
-      setLoadingError(err.message);
-      setLoadingStatus(`Error: ${err.message}`);
+      setLoadingError(err.message); setLoadingStatus(`Error: ${err.message}`);
     }
   }
 
-  // ── Render current screen ──
+  // ── Render ──
   return (
     <>
       <SparkleTrail />
-      {/* Ambient background */}
       <div className="ambient-bg">
-        <div className="orb orb-1" />
-        <div className="orb orb-2" />
-        <div className="orb orb-3" />
+        <div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" />
       </div>
 
       {screen === 'welcome' && <WelcomeScreen onStart={() => setShowDemoModal(true)} />}
       {showDemoModal && (
-        <DemographicModal
-          info={demographicInfo}
-          onChange={setDemographicInfo}
-          onSubmit={() => {
-            setShowDemoModal(false);
-            startTest();
-          }}
-          onClose={() => setShowDemoModal(false)}
-        />
+        <DemographicModal info={demographicInfo} onChange={setDemographicInfo}
+          onSubmit={() => { setShowDemoModal(false); startTest(); }}
+          onClose={() => setShowDemoModal(false)} />
       )}
 
-      {screen === 'memo-study-1' && (
-        <MemoStudyScreen words={words1} timer={memoStudyTimer1} attempt={1} />
+      {screen === 'dsb-display' && (
+        <DSBDisplayScreen digit={dsbDisplayIndex >= 0 && dsbDisplayIndex < dsbSequence.length ? dsbSequence[dsbDisplayIndex] : null}
+          position={dsbDisplayIndex} total={dsbSequence.length} level={dsbLevel} />
       )}
-      {screen === 'memo-recall-1' && (
-        <MemoRecallScreen
-          attempt={1}
-          timer={memoRecallTimer1}
-          value={recallInput1}
-          onChange={setRecallInput1}
-          onSubmit={submitMemoRecall1}
-          inputRef={recallRef}
-        />
+      {screen === 'dsb-input' && (
+        <DSBInputScreen level={dsbLevel} sequenceLength={dsbSequence.length}
+          value={dsbUserInput} onChange={setDsbUserInput} onSubmit={submitDSBAnswer} inputRef={dsbInputRef} />
       )}
-      {screen === 'memo-study-2' && (
-        <MemoStudyScreen words={words2} timer={memoStudyTimer2} attempt={2} />
+
+      {screen === 'ospan-equation' && ospanTrials[ospanTrialIdx] && (
+        <OSPANEquationScreen trial={ospanTrials[ospanTrialIdx]} trialIdx={ospanTrialIdx}
+          totalTrials={ospanTrials.length} pairIdx={ospanPairIdx} timer={ospanEqTimer}
+          onAnswer={handleOspanEqAnswer} />
       )}
-      {screen === 'memo-recall-2' && (
-        <MemoRecallScreen
-          attempt={2}
-          timer={memoRecallTimer2}
-          value={recallInput2}
-          onChange={setRecallInput2}
-          onSubmit={submitMemoRecall2}
-          inputRef={recallRef}
-        />
+      {screen === 'ospan-letter' && ospanTrials[ospanTrialIdx] && (
+        <OSPANLetterScreen letter={ospanTrials[ospanTrialIdx].letters[ospanPairIdx]}
+          pairIdx={ospanPairIdx} totalPairs={ospanTrials[ospanTrialIdx].size} />
+      )}
+      {screen === 'ospan-recall' && ospanTrials[ospanTrialIdx] && (
+        <OSPANRecallScreen trialIdx={ospanTrialIdx} totalTrials={ospanTrials.length}
+          setSize={ospanTrials[ospanTrialIdx].size} selected={ospanRecalled}
+          onSelect={l => { if (ospanRecalled.length < ospanTrials[ospanTrialIdx].size) setOspanRecalled(p => [...p, l]); }}
+          onUndo={() => setOspanRecalled(p => p.slice(0, -1))}
+          onClear={() => setOspanRecalled([])}
+          onSubmit={submitOSPANRecall} />
       )}
 
       {screen === 'argumentative' && (
-        <WritingScreen
-          taskNum="2"
+        <WritingScreen taskNum="3" totalTasks={TOTAL_TASKS}
           title="Argumentative Writing"
           subtitle="Write a persuasive paragraph arguing for or against the following statement."
-          prompt={argPrompt}
-          promptLabel="Prompt"
-          placeholder="Start writing your argument..."
-          timer={argTimer}
-          value={argInput}
-          onChange={setArgInput}
-          onSubmit={submitArgumentative}
-          submitLabel="Submit & Continue"
-          inputRef={argRef}
-        />
+          prompt={argPrompt} promptLabel="Prompt" placeholder="Start writing your argument..."
+          timer={argTimer} value={argInput} onChange={setArgInput}
+          onSubmit={submitArgumentative} submitLabel="Submit & Continue" inputRef={argRef} />
       )}
       {screen === 'creative' && (
-        <WritingScreen
-          taskNum="3"
+        <WritingScreen taskNum="4" totalTasks={TOTAL_TASKS}
           title="Creative Writing"
           subtitle="Write a short, creative story opening inspired by the image described below."
-          prompt={crePrompt}
-          promptLabel="Image Prompt"
-          placeholder="Begin your story..."
-          timer={creTimer}
-          value={creInput}
-          onChange={setCreInput}
-          onSubmit={submitCreative}
-          submitLabel="Submit & View Results"
-          inputRef={creRef}
-        />
+          prompt={crePrompt} promptLabel="Image Prompt" placeholder="Begin your story..."
+          timer={creTimer} value={creInput} onChange={setCreInput}
+          onSubmit={submitCreative} submitLabel="Submit & View Results" inputRef={creRef} />
       )}
-      {screen === 'loading' && (
-        <LoadingScreen progress={loadingProgress} status={loadingStatus} error={loadingError} />
-      )}
-      {screen === 'thanks' && (
-        <ThanksScreen onDone={() => setScreen('results')} />
-      )}
+
+      {screen === 'loading' && <LoadingScreen progress={loadingProgress} status={loadingStatus} error={loadingError} />}
+      {screen === 'thanks' && <ThanksScreen onDone={() => setScreen('results')} />}
       {screen === 'results' && (
-        <ResultsScreen
-          memoResults1={memoResults1}
-          memoResults2={memoResults2}
-          argResults={argResults}
-          creResults={creResults}
-          demographicInfo={demographicInfo}
-          argInput={argInput}
-          creInput={creInput}
-          argPrompt={argPrompt}
-          crePrompt={crePrompt}
+        <ResultsScreen dsbResults={dsbResults} dsbMaxSpan={dsbMaxSpan}
+          ospanResults={ospanResults} argResults={argResults} creResults={creResults}
+          demographicInfo={demographicInfo} argInput={argInput} creInput={creInput}
+          argPrompt={argPrompt} crePrompt={crePrompt}
           onRetake={() => {
-            setScreen('welcome');
-            setMemoResults1(null);
-            setMemoResults2(null);
-            setArgResults(null);
-            setCreResults(null);
-          }}
-        />
+            setScreen('welcome'); setDsbResults([]); setDsbMaxSpan(0);
+            setOspanResults([]); setArgResults(null); setCreResults(null);
+          }} />
       )}
     </>
   );
@@ -464,15 +482,16 @@ function WelcomeScreen({ onStart }) {
           <span className="title-line gradient-text">Test</span>
         </h1>
         <p className="welcome-desc">
-          This assessment measures your <strong>retention ability</strong> and{' '}
-          <strong>expressive ability</strong> through three timed tasks.
+          This assessment measures your <strong>working memory</strong> and{' '}
+          <strong>expressive ability</strong> through four timed tasks.
           Your responses will be evaluated by AI.
         </p>
         <div className="task-preview">
           {[
-            { num: '01', title: 'Memorisation', desc: 'Memorize and recall 10 words — 2 attempts' },
-            { num: '02', title: 'Argumentative Writing', desc: 'Write a persuasive paragraph — 10 min' },
-            { num: '03', title: 'Creative Writing', desc: 'Write a creative story opening — 10 min' },
+            { num: '01', title: 'Digit Span Backward', desc: 'Recall digit sequences in reverse order' },
+            { num: '02', title: 'Operation Span', desc: 'Math judgements + letter recall under load' },
+            { num: '03', title: 'Argumentative Writing', desc: 'Write a persuasive paragraph — 10 min' },
+            { num: '04', title: 'Creative Writing', desc: 'Write a creative story opening — 10 min' },
           ].map(t => (
             <div className="task-preview-item" key={t.num}>
               <div className="task-number">{t.num}</div>
@@ -511,59 +530,32 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Name <span className="required">*</span></label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Your full name"
-                value={info.name}
-                onChange={e => update('name', e.target.value)}
-              />
+              <input type="text" className="form-input" placeholder="Your full name"
+                value={info.name} onChange={e => update('name', e.target.value)} />
             </div>
             <div className="form-group form-group-sm">
               <label className="form-label">Age <span className="required">*</span></label>
-              <input
-                type="number"
-                className="form-input"
-                placeholder="Age"
-                min="1"
-                max="120"
-                value={info.age}
-                onChange={e => update('age', e.target.value)}
-              />
+              <input type="number" className="form-input" placeholder="Age" min="1" max="120"
+                value={info.age} onChange={e => update('age', e.target.value)} />
             </div>
           </div>
-
           <div className="form-group">
             <label className="form-label">Sex <span className="required">*</span></label>
             <div className="btn-group">
               {['Male', 'Female'].map(s => (
-                <button
-                  key={s}
-                  className={`btn-toggle ${info.sex === s ? 'active' : ''}`}
-                  onClick={() => update('sex', s)}
-                >{s}</button>
+                <button key={s} className={`btn-toggle ${info.sex === s ? 'active' : ''}`}
+                  onClick={() => update('sex', s)}>{s}</button>
               ))}
             </div>
           </div>
-
           <div className="form-group">
             <label className="form-label">Major / Faculty</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="e.g. Computer Science"
-              value={info.major}
-              onChange={e => update('major', e.target.value)}
-            />
+            <input type="text" className="form-input" placeholder="e.g. Computer Science"
+              value={info.major} onChange={e => update('major', e.target.value)} />
           </div>
-
           <div className="form-group">
             <label className="form-label">Academic Performance (GPA)</label>
-            <select
-              className="form-select"
-              value={info.gpa}
-              onChange={e => update('gpa', e.target.value)}
-            >
+            <select className="form-select" value={info.gpa} onChange={e => update('gpa', e.target.value)}>
               <option value="">Select GPA range</option>
               <option value="Below 3">Below 3</option>
               <option value="3 - 3.5">3 – 3.5</option>
@@ -572,45 +564,28 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
               <option value="4.5 - 5">4.5 – 5</option>
             </select>
           </div>
-
           <div className="form-group">
             <label className="form-label">Self-perceived English Fluency</label>
             <div className="btn-group">
               {[1, 2, 3, 4, 5].map(n => (
-                <button
-                  key={n}
-                  className={`btn-toggle ${info.englishFluency === n ? 'active' : ''}`}
-                  onClick={() => update('englishFluency', n)}
-                >{n}</button>
+                <button key={n} className={`btn-toggle ${info.englishFluency === n ? 'active' : ''}`}
+                  onClick={() => update('englishFluency', n)}>{n}</button>
               ))}
             </div>
-            <div className="scale-labels">
-              <span>Basic</span>
-              <span>Fluent</span>
-            </div>
+            <div className="scale-labels"><span>Basic</span><span>Fluent</span></div>
           </div>
-
           <div className="form-group">
             <label className="form-label">Languages Spoken Fluently</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="e.g. English, Mandarin, Malay"
-              value={info.languages}
-              onChange={e => update('languages', e.target.value)}
-            />
+            <input type="text" className="form-input" placeholder="e.g. English, Mandarin, Malay"
+              value={info.languages} onChange={e => update('languages', e.target.value)} />
           </div>
-
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Reading Frequency / Week</label>
               <div className="btn-group">
                 {[1, 2, 3, 4, 5, 6, 7].map(n => (
-                  <button
-                    key={n}
-                    className={`btn-toggle btn-toggle-sm ${info.readingFreq === n ? 'active' : ''}`}
-                    onClick={() => update('readingFreq', n)}
-                  >{n}</button>
+                  <button key={n} className={`btn-toggle btn-toggle-sm ${info.readingFreq === n ? 'active' : ''}`}
+                    onClick={() => update('readingFreq', n)}>{n}</button>
                 ))}
               </div>
             </div>
@@ -618,22 +593,14 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
               <label className="form-label">Writing Frequency / Week</label>
               <div className="btn-group">
                 {[1, 2, 3, 4, 5, 6, 7].map(n => (
-                  <button
-                    key={n}
-                    className={`btn-toggle btn-toggle-sm ${info.writingFreq === n ? 'active' : ''}`}
-                    onClick={() => update('writingFreq', n)}
-                  >{n}</button>
+                  <button key={n} className={`btn-toggle btn-toggle-sm ${info.writingFreq === n ? 'active' : ''}`}
+                    onClick={() => update('writingFreq', n)}>{n}</button>
                 ))}
               </div>
             </div>
           </div>
         </div>
-
-        <button
-          className="btn btn-primary btn-lg modal-submit"
-          disabled={!isValid}
-          onClick={onSubmit}
-        >
+        <button className="btn btn-primary btn-lg modal-submit" disabled={!isValid} onClick={onSubmit}>
           <span>Start Assessment</span>
           <ArrowIcon />
         </button>
@@ -642,73 +609,166 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
   );
 }
 
-function MemoStudyScreen({ words, timer, attempt }) {
+// ─── DSB Display Screen ────────────────────────────────
+function DSBDisplayScreen({ digit, position, total, level }) {
   return (
-    <section className="screen" key={`memo-study-${attempt}`}>
+    <section className="screen" key={`dsb-display-${level}-${position}`}>
       <div className="screen-content">
         <div className="screen-header">
-          <div className="task-badge">Task 1 of 3 — Attempt {attempt} of 2</div>
-          <h2>Memorisation</h2>
-          <p className="screen-subtitle">Study these 10 words carefully. You will be asked to recall them.</p>
+          <div className="task-badge">Task 1 of {TOTAL_TASKS}</div>
+          <h2>Digit Span Backward</h2>
+          <p className="screen-subtitle">Watch the digits carefully. You will type them in <strong>reverse order</strong>.</p>
         </div>
-        <div className={`timer-display ${timer.timerClass}`}>
-          <ClockIcon />
-          <span>{timer.formatted}</span>
-        </div>
-        <div className="word-grid">
-          {words.map((w, i) => (
-            <div className="word-card" key={i}>{w}</div>
+        <div className="dsb-level-badge">Level {level} — {total} digits</div>
+        {digit !== null ? (
+          <div className="dsb-digit-display" key={`${level}-${position}`}>
+            <span className="dsb-digit">{digit}</span>
+          </div>
+        ) : (
+          <div className="dsb-digit-display">
+            <span className="dsb-digit dsb-digit-ready">…</span>
+          </div>
+        )}
+        <div className="dsb-progress">
+          {Array.from({ length: total }).map((_, i) => (
+            <div key={i} className={`dsb-dot ${i < position ? 'done' : i === position ? 'active' : ''}`} />
           ))}
         </div>
-        <div className="memo-hint">
-          <InfoIcon />
-          The words will disappear when the timer ends
-        </div>
       </div>
     </section>
   );
 }
 
-function MemoRecallScreen({ attempt, timer, value, onChange, onSubmit, inputRef }) {
+// ─── DSB Input Screen ──────────────────────────────────
+function DSBInputScreen({ level, sequenceLength, value, onChange, onSubmit, inputRef }) {
   return (
-    <section className="screen" key={`memo-recall-${attempt}`}>
+    <section className="screen" key={`dsb-input-${level}`}>
       <div className="screen-content">
         <div className="screen-header">
-          <div className="task-badge">Task 1 of 3 — Attempt {attempt} of 2</div>
-          <h2>Recall the Words</h2>
-          <p className="screen-subtitle">Type as many words as you can remember, separated by commas or new lines.</p>
+          <div className="task-badge">Task 1 of {TOTAL_TASKS}</div>
+          <h2>Type Digits in Reverse</h2>
+          <p className="screen-subtitle">
+            Enter the {sequenceLength} digits you just saw, but in <strong>reverse order</strong> (last digit first).
+          </p>
         </div>
-        <div className={`timer-display ${timer.timerClass}`}>
-          <ClockIcon />
-          <span>{timer.formatted}</span>
-        </div>
-        <div className="textarea-wrapper">
-          <textarea
-            ref={inputRef}
-            className="text-input"
-            placeholder="Type the words you remember..."
-            rows={6}
-            value={value}
-            onChange={e => onChange(e.target.value)}
+        <div className="dsb-level-badge">Level {level}</div>
+        <div className="dsb-input-wrap">
+          <input ref={inputRef} type="text" inputMode="numeric" pattern="[0-9]*"
+            className="form-input dsb-input"
+            placeholder={`Enter ${sequenceLength} digits reversed…`}
+            value={value} onChange={e => onChange(e.target.value.replace(/[^0-9]/g, ''))}
+            maxLength={sequenceLength}
+            onKeyDown={e => { if (e.key === 'Enter' && value.length === sequenceLength) onSubmit(); }}
           />
         </div>
-        <button className="btn btn-primary" onClick={onSubmit}>
-          <span>{attempt === 1 ? 'Submit & Next Attempt' : 'Submit & Continue'}</span>
-          <ArrowIcon />
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <button className="btn btn-primary" disabled={value.length !== sequenceLength} onClick={onSubmit}>
+            <span>Submit</span>
+            <ArrowIcon />
+          </button>
+        </div>
       </div>
     </section>
   );
 }
 
-function WritingScreen({ taskNum, title, subtitle, prompt, promptLabel, placeholder, timer, value, onChange, onSubmit, submitLabel, inputRef }) {
+// ─── OSPAN Equation Screen ─────────────────────────────
+function OSPANEquationScreen({ trial, trialIdx, totalTrials, pairIdx, timer, onAnswer }) {
+  const eq = trial.equations[pairIdx];
+  const pct = (timer.remaining / OSPAN_EQUATION_TIME) * 100;
+  return (
+    <section className="screen" key={`ospan-eq-${trialIdx}-${pairIdx}`}>
+      <div className="screen-content">
+        <div className="screen-header">
+          <div className="task-badge">Task 2 of {TOTAL_TASKS} — Set {trialIdx + 1} of {totalTrials}</div>
+          <h2>Operation Span</h2>
+          <p className="screen-subtitle">Is this equation correct? ({pairIdx + 1} of {trial.size})</p>
+        </div>
+        <div className="ospan-timer-bar">
+          <div className="ospan-timer-fill" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="ospan-equation-card">
+          <span className="ospan-equation-text">{eq.text}</span>
+        </div>
+        <div className="ospan-tf-buttons">
+          <button className="btn ospan-btn-true" onClick={() => onAnswer(true)}>
+            <span>✓ True</span>
+          </button>
+          <button className="btn ospan-btn-false" onClick={() => onAnswer(false)}>
+            <span>✗ False</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── OSPAN Letter Screen ───────────────────────────────
+function OSPANLetterScreen({ letter, pairIdx, totalPairs }) {
+  return (
+    <section className="screen" key={`ospan-letter-${pairIdx}`}>
+      <div className="screen-content">
+        <div className="screen-header">
+          <div className="task-badge">Task 2 of {TOTAL_TASKS}</div>
+          <h2>Remember This Letter</h2>
+          <p className="screen-subtitle">Letter {pairIdx + 1} of {totalPairs}</p>
+        </div>
+        <div className="ospan-letter-display">
+          <span className="ospan-letter">{letter}</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── OSPAN Recall Screen ───────────────────────────────
+function OSPANRecallScreen({ trialIdx, totalTrials, setSize, selected, onSelect, onUndo, onClear, onSubmit }) {
+  return (
+    <section className="screen" key={`ospan-recall-${trialIdx}`}>
+      <div className="screen-content">
+        <div className="screen-header">
+          <div className="task-badge">Task 2 of {TOTAL_TASKS} — Set {trialIdx + 1} of {totalTrials}</div>
+          <h2>Recall the Letters</h2>
+          <p className="screen-subtitle">Click the letters in the <strong>order they appeared</strong>. ({selected.length}/{setSize})</p>
+        </div>
+        <div className="ospan-selected-row">
+          {Array.from({ length: setSize }).map((_, i) => (
+            <div key={i} className={`ospan-selected-slot ${i < selected.length ? 'filled' : ''}`}>
+              {selected[i] || '—'}
+            </div>
+          ))}
+        </div>
+        <div className="ospan-letter-grid">
+          {OSPAN_LETTERS.map(l => (
+            <button key={l} className={`ospan-grid-btn ${selected.includes(l) ? 'used' : ''}`}
+              disabled={selected.includes(l) || selected.length >= setSize}
+              onClick={() => onSelect(l)}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <div className="ospan-recall-actions">
+          <button className="btn btn-secondary" onClick={onUndo} disabled={selected.length === 0}>Undo</button>
+          <button className="btn btn-secondary" onClick={onClear} disabled={selected.length === 0}>Clear</button>
+          <button className="btn btn-primary" onClick={onSubmit}>
+            <span>Submit</span>
+            <ArrowIcon />
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
+function WritingScreen({ taskNum, totalTasks, title, subtitle, prompt, promptLabel, placeholder, timer, value, onChange, onSubmit, submitLabel, inputRef }) {
   const wordCount = countWords(value);
 
   return (
     <section className="screen" key={`writing-${taskNum}`}>
       <div className="screen-content">
         <div className="screen-header">
-          <div className="task-badge">Task {taskNum} of 3</div>
+          <div className="task-badge">Task {taskNum} of {totalTasks}</div>
           <h2>{title}</h2>
           <p className="screen-subtitle">{subtitle}</p>
         </div>
@@ -762,7 +822,7 @@ function LoadingScreen({ progress, status, error }) {
   );
 }
 
-function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, demographicInfo, argInput, creInput, argPrompt, crePrompt, onRetake }) {
+function ResultsScreen({ dsbResults = [], dsbMaxSpan = 0, ospanResults = [], argResults, creResults, demographicInfo, argInput, creInput, argPrompt, crePrompt, onRetake }) {
   const argDimensions = [
     { key: 'thesis_focus', label: 'Thesis & Focus' },
     { key: 'evidence_support', label: 'Evidence & Support' },
@@ -779,21 +839,17 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, dem
     { key: 'pacing_rhythm', label: 'Pacing & Rhythm' },
   ];
 
-  const memo1Score = memoResults1?.score ?? 0;
-  const memo2Score = memoResults2?.score ?? 0;
-  const memoTotalScore = memo1Score + memo2Score;
-  const memoTotalPossible = (memoResults1?.total ?? 10) + (memoResults2?.total ?? 10);
-
-  const argTotal = argResults?.scores
-    ? Object.values(argResults.scores).reduce((a, b) => a + b, 0)
-    : 0;
-
-  const creTotal = creResults?.scores
-    ? Object.values(creResults.scores).reduce((a, b) => a + b, 0)
-    : 0;
+  const argTotal = argResults?.scores ? Object.values(argResults.scores).reduce((a, b) => a + b, 0) : 0;
+  const creTotal = creResults?.scores ? Object.values(creResults.scores).reduce((a, b) => a + b, 0) : 0;
 
   const [showArgEssay, setShowArgEssay] = useState(false);
   const [showCreEssay, setShowCreEssay] = useState(false);
+
+  // OSPAN Stats
+  const ospanTotalLetters = ospanResults.reduce((sum, r) => sum + r.lettersCorrect, 0);
+  const ospanTotalPossible = ospanResults.reduce((sum, r) => sum + r.setSize, 0);
+  const ospanMathCorrect = ospanResults.reduce((sum, r) => sum + r.mathCorrect, 0);
+  const ospanMathTotal = ospanResults.reduce((sum, r) => sum + r.mathTotal, 0);
 
   // ── PDF Download ──
   function downloadPDF() {
@@ -819,7 +875,8 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, dem
     doc.text('Intelligence Test — Results', margin, 27);
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), pageWidth - margin, 27, { align: 'right' });
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    doc.text(dateStr, pageWidth - margin, 27, { align: 'right' });
     y = 52;
 
     // Demographic Info
@@ -856,38 +913,65 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, dem
     });
     y += 6;
 
-    // Memorisation
+    // DSB Results
     checkPage(40);
     doc.setTextColor(99, 102, 241);
     doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Memorisation — ${memoTotalScore}/${memoTotalPossible}`, margin, y);
+    doc.text(`Digit Span Backward — Max Span: ${dsbMaxSpan}`, margin, y);
     y += 3;
     doc.line(margin, y, margin + contentWidth, y);
     y += 8;
 
     doc.setTextColor(60, 60, 60);
     doc.setFontSize(10);
-    [{ label: 'Attempt 1', result: memoResults1 }, { label: 'Attempt 2', result: memoResults2 }].forEach(({ label, result }) => {
-      if (!result) return;
-      checkPage(20);
+    dsbResults.forEach((res) => {
+      checkPage(15);
+      const label = `Level ${res.level} (${res.sequence.length} digits)`;
+      const status = res.correct ? 'PASSED' : 'FAILED';
       doc.setFont('helvetica', 'bold');
-      doc.text(`${label}: ${result.score}/${result.total}`, margin, y);
-      y += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(16, 185, 129);
-      doc.text(`Correct: ${result.matched.map(w => capitalizeFirst(w)).join(', ') || 'None'}`, margin + 4, y);
-      y += 5;
-      doc.setTextColor(239, 68, 68);
-      doc.text(`Missed: ${result.missed.map(w => capitalizeFirst(w)).join(', ') || 'None'}`, margin + 4, y);
-      y += 5;
-      if (result.wrong.length > 0) {
-        doc.setTextColor(245, 158, 11);
-        doc.text(`Incorrect: ${result.wrong.map(w => capitalizeFirst(w)).join(', ')}`, margin + 4, y);
-        y += 5;
-      }
+      doc.text(`${label}:`, margin, y);
+      doc.setTextColor(res.correct ? 16 : 239, res.correct ? 185 : 68, res.correct ? 129 : 68);
+      doc.text(status, margin + 40, y);
       doc.setTextColor(60, 60, 60);
-      y += 3;
+      doc.setFont('helvetica', 'normal');
+      doc.text(`(${res.numCorrect}/${res.sequence.length} correct)`, margin + 60, y);
+      y += 5;
+      const seqStr = res.sequence.join('');
+      const revStr = res.reversed.join('');
+      const ansStr = res.userAnswer.join('');
+      doc.text(`Seq: ${seqStr}  |  Rev: ${revStr}  |  Ans: ${ansStr}`, margin + 4, y);
+      y += 6;
+    });
+    y += 4;
+
+    // OSPAN Results
+    checkPage(40);
+    doc.setTextColor(99, 102, 241);
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Operation Span — Score: ${ospanTotalLetters}/${ospanTotalPossible}`, margin, y);
+    y += 3;
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 8;
+
+    doc.setTextColor(60, 60, 60);
+    doc.setFontSize(10);
+    const mathAcc = ospanMathTotal > 0 ? Math.round(ospanMathCorrect / ospanMathTotal * 100) : 0;
+    doc.text(`Math Accuracy: ${ospanMathCorrect}/${ospanMathTotal} (${mathAcc}%)`, margin, y);
+    y += 6;
+
+    ospanResults.forEach((res, i) => {
+      checkPage(15);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Set ${i + 1} (Size ${res.setSize}):`, margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`${res.lettersCorrect}/${res.setSize} letters recall, ${res.mathCorrect}/${res.setSize} math`, margin + 40, y);
+      y += 5;
+      const recStr = res.recalledLetters.join('');
+      const corStr = res.correctLetters.join('');
+      doc.text(`Correct: ${corStr}  |  Recalled: ${recStr}`, margin + 4, y);
+      y += 6;
     });
     y += 4;
 
@@ -931,7 +1015,6 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, dem
           y += 5;
         });
       }
-      // Written response
       if (argInput && argInput.trim()) {
         y += 4;
         checkPage(20);
@@ -991,7 +1074,6 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, dem
           y += 5;
         });
       }
-      // Written response
       if (creInput && creInput.trim()) {
         y += 4;
         checkPage(20);
@@ -1022,26 +1104,53 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, dem
           <h2>Your Results</h2>
         </div>
 
-        {/* Memorisation — Both Attempts */}
+        {/* DSB Results */}
+        <div className="result-card">
+          <div className="result-card-header">
+            <div className="result-icon">🔢</div>
+            <div>
+              <h3>Digit Span Backward</h3>
+              <p className="result-subtitle">Working Memory Capacity</p>
+            </div>
+            <div className="result-score-badge">Max: {dsbMaxSpan}</div>
+          </div>
+          <div className="memo-words-list">
+            {dsbResults.map((r, i) => (
+              <div key={i} className={`memo-word-tag ${r.correct ? 'correct' : 'wrong'}`} style={{ display: 'block', width: '100%', marginBottom: 4 }}>
+                <span style={{ fontWeight: 700, marginRight: 8 }}>Level {r.level} ({r.sequence.length} digits):</span>
+                {r.correct ? 'PASSED' : 'FAILED'} ({r.numCorrect}/{r.sequence.length} correct) — Seq: {r.sequence.join('')} | Rev: {r.reversed.join('')} | Ans: {r.userAnswer.join('')}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* OSPAN Results */}
         <div className="result-card">
           <div className="result-card-header">
             <div className="result-icon">🧠</div>
             <div>
-              <h3>Memorisation</h3>
-              <p className="result-subtitle">Raw retention ability</p>
+              <h3>Operation Span</h3>
+              <p className="result-subtitle">Dual-Task Efficiency</p>
             </div>
-            <div className="result-score-badge">{memoTotalScore}/{memoTotalPossible}</div>
+            <div className="result-score-badge">{ospanTotalLetters}/{ospanTotalPossible}</div>
           </div>
-
-          {/* Attempt 1 */}
-          {memoResults1 && (
-            <MemoAttemptResult label="Attempt 1" result={memoResults1} />
-          )}
-
-          {/* Attempt 2 */}
-          {memoResults2 && (
-            <MemoAttemptResult label="Attempt 2" result={memoResults2} />
-          )}
+          <p style={{ marginBottom: 16, color: 'var(--text-secondary)' }}>
+            Math Accuracy: <strong>{ospanMathTotal > 0 ? Math.round(ospanMathCorrect / ospanMathTotal * 100) : 0}%</strong> ({ospanMathCorrect}/{ospanMathTotal})
+          </p>
+          <div className="memo-words-list">
+            {ospanResults.map((r, i) => (
+              <div key={i} className="memo-attempt" style={{ width: '100%' }}>
+                <div className="memo-attempt-header">
+                  <span className="memo-attempt-label">Set {i + 1} (Size {r.setSize})</span>
+                  <span className="memo-attempt-score">{r.lettersCorrect}/{r.setSize}</span>
+                </div>
+                <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                  Target: {r.correctLetters.join('')} <br />
+                  Recall: {r.recalledLetters.join('')}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Argumentative */}
@@ -1075,18 +1184,11 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, dem
               </div>
               {argInput && argInput.trim() && (
                 <div className="essay-section">
-                  <button
-                    className="essay-toggle-btn"
-                    onClick={() => setShowArgEssay(!showArgEssay)}
-                  >
+                  <button className="essay-toggle-btn" onClick={() => setShowArgEssay(!showArgEssay)}>
                     {showArgEssay ? 'Hide Your Response' : 'Show Your Response'}
                     <span style={{ transform: showArgEssay ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
                   </button>
-                  {showArgEssay && (
-                    <div className="essay-container">
-                      {argInput}
-                    </div>
-                  )}
+                  {showArgEssay && <div className="essay-container">{argInput}</div>}
                 </div>
               )}
             </>
@@ -1126,18 +1228,11 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, dem
               </div>
               {creInput && creInput.trim() && (
                 <div className="essay-section">
-                  <button
-                    className="essay-toggle-btn"
-                    onClick={() => setShowCreEssay(!showCreEssay)}
-                  >
+                  <button className="essay-toggle-btn" onClick={() => setShowCreEssay(!showCreEssay)}>
                     {showCreEssay ? 'Hide Your Response' : 'Show Your Response'}
                     <span style={{ transform: showCreEssay ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
                   </button>
-                  {showCreEssay && (
-                    <div className="essay-container">
-                      {creInput}
-                    </div>
-                  )}
+                  {showCreEssay && <div className="essay-container">{creInput}</div>}
                 </div>
               )}
             </>
@@ -1158,38 +1253,6 @@ function ResultsScreen({ memoResults1, memoResults2, argResults, creResults, dem
         </div>
       </div>
     </section>
-  );
-}
-
-// ─── Memo Attempt Result Sub-component ─────────────────
-function MemoAttemptResult({ label, result }) {
-  return (
-    <div className="memo-attempt">
-      <div className="memo-attempt-header">
-        <span className="memo-attempt-label">{label}</span>
-        <span className="memo-attempt-score">{result.score}/{result.total}</span>
-      </div>
-      <div className="memo-words-list">
-        {result.matched.map(w => (
-          <span className="memo-word-tag correct" key={`c-${w}`}>✓ {capitalizeFirst(w)}</span>
-        ))}
-        {result.missed.map(w => (
-          <span className="memo-word-tag missed" key={`m-${w}`}>✗ {capitalizeFirst(w)}</span>
-        ))}
-      </div>
-      {result.wrong.length > 0 && (
-        <>
-          <div style={{ marginTop: 8, marginBottom: 4, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Incorrect guesses:
-          </div>
-          <div className="memo-words-list">
-            {result.wrong.map(w => (
-              <span className="memo-word-tag wrong" key={`w-${w}`}>~ {capitalizeFirst(w)}</span>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
   );
 }
 
