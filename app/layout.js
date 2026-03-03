@@ -12,7 +12,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata = {
-  title: "Intelligence Test — Writing Analysis Platform",
+  title: "Brain RAM to Word Jam! - Intelligence Test",
   description:
     "Evaluate retention and expressive ability through memorization, argumentative writing, and creative writing tasks, graded by AI.",
 };

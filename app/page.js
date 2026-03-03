@@ -8,13 +8,13 @@ const DSB_START_LEVEL = 5;
 const DSB_LEVELS = [5, 7, 9]; // Updated to [5, 7, 9]
 
 const OSPAN_LETTERS = ['F', 'H', 'J', 'K', 'L', 'N', 'P', 'Q', 'R', 'S', 'T', 'Y'];
-const OSPAN_EQUATION_TIME = 8;
+const OSPAN_EQUATION_TIME = 10;
 const OSPAN_LETTER_DISPLAY_MS = 1500;
 const OSPAN_SET_SIZES = [5, 7, 9]; // Updated to [5, 7, 9]
 
 const ARG_PROMPT = "Social media has done more harm than good to modern society.";
 const CRE_PROMPT = "Describe Red";
-const WRITING_TIME = 600;
+const WRITING_TIME = 300;
 const TOTAL_TASKS = 4;
 
 
@@ -145,10 +145,75 @@ const DownloadIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
 );
 
+// ─── Interstitial Screen ───────────────────────────────
+function InterstitialScreen({ info }) {
+  const [count, setCount] = useState(null);
+
+  useEffect(() => {
+    if (count === null) return;
+
+    if (count > 0) {
+      const t = setTimeout(() => setCount(c => c - 1), 1000);
+      return () => clearTimeout(t);
+    }
+    // Count reached 0 (or technically 'GO') - execute start
+    if (count === 0) {
+      const t = setTimeout(() => info.onStart(), 500);
+      return () => clearTimeout(t);
+    }
+  }, [count, info]);
+
+  return (
+    <section className="screen" style={{ textAlign: 'center', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(20px)', position: 'fixed', inset: 0, zIndex: 100 }}>
+      {/* Background Video */}
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: -1, opacity: 0.6 }}
+      >
+        <source src="/video.mp4" type="video/mp4" />
+      </video>
+
+      <div className="screen-content">
+        {count === null ? (
+          <>
+            <div className="task-badge" style={{ background: 'rgba(255,255,255,0.1)', borderColor: 'rgba(255,255,255,0.2)' }}>Prepare for Task</div>
+            <h1 className="welcome-title" style={{ fontSize: '3rem', marginBottom: 24 }}>{info.title}</h1>
+            <p className="screen-subtitle" style={{ marginBottom: 60, fontSize: '1.2rem', maxWidth: '600px', marginInline: 'auto' }}>{info.desc}</p>
+            <button className="btn"
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.3)',
+                color: 'white',
+                fontSize: '1.5rem',
+                padding: '20px 60px',
+                borderRadius: '50px',
+                transition: 'all 0.3s ease',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={e => { e.target.style.background = 'rgba(255,255,255,0.1)'; e.target.style.borderColor = 'white'; }}
+              onMouseLeave={e => { e.target.style.background = 'transparent'; e.target.style.borderColor = 'rgba(255,255,255,0.3)'; }}
+              onClick={() => setCount(3)}
+            >
+              Click to Start
+            </button>
+          </>
+        ) : (
+          <div style={{ fontSize: '8rem', fontWeight: 900, color: 'white', textShadow: '0 0 40px rgba(255,255,255,0.5)', animation: 'scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
+            {count}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────
 export default function Home() {
   const [screen, setScreen] = useState('welcome');
-  const [showDemoModal, setShowDemoModal] = useState(false);
+
   const [demographicInfo, setDemographicInfo] = useState({
     name: '', age: '', sex: '', major: '', gpa: '',
     englishFluency: 3, languages: '', readingFreq: 4, writingFreq: 4,
@@ -185,6 +250,9 @@ export default function Home() {
   const [loadingStatus, setLoadingStatus] = useState('');
   const [loadingError, setLoadingError] = useState(null);
 
+  // Interstitial
+  const [interstitialInfo, setInterstitialInfo] = useState(null);
+
   // Refs
   const dsbInputRef = useRef(null);
   const argRef = useRef(null);
@@ -208,12 +276,9 @@ export default function Home() {
       setTimeout(() => dsbInputRef.current?.focus(), 100);
       return;
     }
-    // Dynamic speed: Slower for lower levels (5), faster for higher (9)
-    // 5 -> 1200ms, 7 -> 900ms, 9 -> 600ms
-    const delay = dsbLevel <= 5 ? 1200 : dsbLevel <= 7 ? 900 : 600;
-    const t = setTimeout(() => setDsbDisplayIndex(p => p + 1), delay);
+    const t = setTimeout(() => setDsbDisplayIndex(p => p + 1), 1500);
     return () => clearTimeout(t);
-  }, [screen, dsbDisplayIndex, dsbSequence.length, dsbLevel]);
+  }, [screen, dsbDisplayIndex, dsbSequence.length]);
 
   // ── OSPAN: Letter auto-advance ──
   useEffect(() => {
@@ -251,7 +316,14 @@ export default function Home() {
     setArgPrompt(ARG_PROMPT); setCrePrompt(CRE_PROMPT);
     setArgInput(''); setCreInput('');
     hasSubmittedArg.current = false; hasSubmittedCre.current = false;
-    setScreen('dsb-display');
+
+    // Setup Task 1 Interstitial
+    setInterstitialInfo({
+      title: 'Task 1: Digit Span Backward',
+      desc: 'You will see a sequence of digits. Remember them and type them in REVERSE order.',
+      onStart: () => setScreen('dsb-display')
+    });
+    setScreen('interstitial');
   }
 
   // ── DSB: Submit answer ──
@@ -292,8 +364,17 @@ export default function Home() {
     setOspanTrialIdx(0); setOspanPairIdx(0);
     setOspanEqResults([]); setOspanRecalled([]);
     hasAnsweredEq.current = false;
-    setScreen('ospan-equation');
-    ospanEqTimer.start(OSPAN_EQUATION_TIME);
+
+    // Setup Task 2 Interstitial
+    setInterstitialInfo({
+      title: 'Task 2: Operation Span',
+      desc: 'Solve math equations while remembering letters. Recall the letters in order after each set.',
+      onStart: () => {
+        setScreen('ospan-equation');
+        ospanEqTimer.start(OSPAN_EQUATION_TIME);
+      }
+    });
+    setScreen('interstitial');
   }
 
   // ── OSPAN: equation answer ──
@@ -330,16 +411,32 @@ export default function Home() {
     const newResults = [...ospanResults, result];
     setOspanResults(newResults);
 
-    if (ospanTrialIdx + 1 < ospanTrials.length) {
-      setOspanTrialIdx(p => p + 1);
-      setOspanPairIdx(0); setOspanEqResults([]); setOspanRecalled([]);
+    const nextIdx = ospanTrialIdx + 1;
+    if (nextIdx < ospanTrials.length) {
+      setOspanTrialIdx(nextIdx);
+      setOspanPairIdx(0);
+      setOspanRecalled([]);
+      setOspanEqResults([]); // Fix: Reset math results for the next set
       hasAnsweredEq.current = false;
+
+      // Interstitial between OSPAN sets? User said "before every test start".
+      // Assuming Tasks. If sets, we could add here.
+      // Assuming Tasks for now.
+
       setScreen('ospan-equation');
       ospanEqTimer.start(OSPAN_EQUATION_TIME);
     } else {
-      setScreen('argumentative');
-      argTimer.start(WRITING_TIME);
-      setTimeout(() => argRef.current?.focus(), 100);
+      // Start Task 3 Interstitial
+      setInterstitialInfo({
+        title: 'Task 3: Argumentative Writing',
+        desc: 'Write an essay based on the prompt. You have 5 minutes.',
+        onStart: () => {
+          setScreen('writing-arg');
+          argTimer.start(WRITING_TIME);
+          setTimeout(() => argRef.current?.focus(), 100);
+        }
+      });
+      setScreen('interstitial');
     }
   }
 
@@ -348,9 +445,18 @@ export default function Home() {
     if (hasSubmittedArg.current) return;
     hasSubmittedArg.current = true;
     argTimer.stop();
-    setScreen('creative');
-    creTimer.start(WRITING_TIME);
-    setTimeout(() => creRef.current?.focus(), 100);
+
+    // Start Task 4 Interstitial
+    setInterstitialInfo({
+      title: 'Task 4: Creative Writing',
+      desc: 'Write a creative response to the prompt. You have 5 minutes.',
+      onStart: () => {
+        setScreen('writing-cre');
+        creTimer.start(WRITING_TIME);
+        setTimeout(() => creRef.current?.focus(), 100);
+      }
+    });
+    setScreen('interstitial');
   }
 
   // ── Submit Creative ──
@@ -405,17 +511,11 @@ export default function Home() {
         <div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" />
       </div>
 
-      {screen === 'welcome' && <WelcomeScreen onStart={() => setShowDemoModal(true)} />}
-      {showDemoModal && (
-        <DemographicModal info={demographicInfo} onChange={setDemographicInfo}
-          onSubmit={() => { setShowDemoModal(false); startTest(); }}
-          onClose={() => setShowDemoModal(false)} />
-      )}
+      {screen === 'welcome' && <WelcomeScreen onStart={() => setScreen('demographic')} />}
+      {screen === 'demographic' && <DemographicModal info={demographicInfo} onChange={setDemographicInfo} onSubmit={() => { startTest(); }} onClose={() => setScreen('welcome')} />}
+      {screen === 'interstitial' && interstitialInfo && <InterstitialScreen info={interstitialInfo} />}
 
-      {screen === 'dsb-display' && (
-        <DSBDisplayScreen digit={dsbDisplayIndex >= 0 && dsbDisplayIndex < dsbSequence.length ? dsbSequence[dsbDisplayIndex] : null}
-          position={dsbDisplayIndex} total={dsbSequence.length} level={dsbLevel} />
-      )}
+      {screen === 'dsb-display' && <DSBDisplayScreen digit={dsbDisplayIndex < dsbSequence.length ? dsbSequence[dsbDisplayIndex] : null} position={dsbDisplayIndex} total={dsbSequence.length} level={dsbLevel} />}
       {screen === 'dsb-input' && (
         <DSBInputScreen level={dsbLevel} sequenceLength={dsbSequence.length}
           value={dsbUserInput} onChange={setDsbUserInput} onSubmit={submitDSBAnswer} inputRef={dsbInputRef} />
@@ -439,19 +539,47 @@ export default function Home() {
           onSubmit={submitOSPANRecall} />
       )}
 
-      {screen === 'argumentative' && (
+      {screen === 'writing-arg' && (
         <WritingScreen taskNum="3" totalTasks={TOTAL_TASKS}
           title="Argumentative Writing"
-          subtitle="Write a persuasive paragraph arguing for or against the following statement."
-          prompt={argPrompt} promptLabel="Prompt" placeholder="Start writing your argument..."
+          instructions={
+            <>
+              In one argumentative paragraph (approx. 50-100 words), argue either for or against the claim: <strong>&lsquo;Social media has done more harm than good to modern society.&rsquo;</strong> You will be graded by the overall quality of writing rather than number of words written.
+            </>
+          }
+          rubrics={
+            <>
+              <strong>Rubrics for argumentative writing (each section is scored out of 4)</strong><br />
+              1. Thesis &amp; Focus<br />
+              2. Evidence &amp; Support<br />
+              3. Structure &amp; Coherence<br />
+              4. Syntax &amp; Fluency<br />
+              5. Word Choice
+            </>
+          }
+          promptLabel="Instructions" placeholder="Start writing your argument..."
           timer={argTimer} value={argInput} onChange={setArgInput}
           onSubmit={submitArgumentative} submitLabel="Submit & Continue" inputRef={argRef} />
       )}
-      {screen === 'creative' && (
+      {screen === 'writing-cre' && (
         <WritingScreen taskNum="4" totalTasks={TOTAL_TASKS}
           title="Creative Writing"
-          subtitle="Write a short, creative story opening inspired by the image described below."
-          prompt={crePrompt} promptLabel="Image Prompt" placeholder="Begin your story..."
+          instructions={
+            <>
+              In a single paragraph (approx. 50-100 words), describe the colour <strong>&lsquo;red&rsquo;</strong> to someone who has been blind since birth using non-visual senses. You will be graded by the overall quality of writing rather than number of words written.
+            </>
+          }
+          rubrics={
+            <>
+              <strong>Rubrics for creative writing (each section is scored out of 4)</strong><br />
+              1. Originality<br />
+              2. Imagery &amp; Detail<br />
+              3. Narrative Structure<br />
+              4. Figurative Language<br />
+              5. Pacing &amp; Rhythm
+            </>
+          }
+          promptLabel="Instructions" placeholder="Begin your story..."
           timer={creTimer} value={creInput} onChange={setCreInput}
           onSubmit={submitCreative} submitLabel="Submit & View Results" inputRef={creRef} />
       )}
@@ -480,8 +608,8 @@ function WelcomeScreen({ onStart }) {
       <div className="screen-content">
         <div className="welcome-badge">Cognitive Assessment</div>
         <h1 className="welcome-title">
-          <span className="title-line">Intelligence</span>
-          <span className="title-line gradient-text">Test</span>
+          <span className="title-line">Brain RAM to</span>
+          <span className="title-line gradient-text">Word Jam!</span>
         </h1>
         <p className="welcome-desc">
           This assessment measures your <strong>working memory</strong> and{' '}
@@ -492,8 +620,8 @@ function WelcomeScreen({ onStart }) {
           {[
             { num: '01', title: 'Digit Span Backward', desc: 'Recall digit sequences in reverse order' },
             { num: '02', title: 'Operation Span', desc: 'Math judgements + letter recall under load' },
-            { num: '03', title: 'Argumentative Writing', desc: 'Write a persuasive paragraph — 10 min' },
-            { num: '04', title: 'Creative Writing', desc: 'Write a creative story opening — 10 min' },
+            { num: '03', title: 'Argumentative Writing', desc: 'Write a persuasive paragraph — 5 min' },
+            { num: '04', title: 'Creative Writing', desc: 'Write a creative story opening — 5 min' },
           ].map(t => (
             <div className="task-preview-item" key={t.num}>
               <div className="task-number">{t.num}</div>
@@ -516,7 +644,7 @@ function WelcomeScreen({ onStart }) {
 // ─── Demographic Modal ─────────────────────────────────
 function DemographicModal({ info, onChange, onSubmit, onClose }) {
   const update = (field, value) => onChange({ ...info, [field]: value });
-  const isValid = info.name.trim() && info.age && info.sex;
+  const isValid = !!(info.age && info.sex && info.major?.trim() && info.gpa && info.languages?.trim());
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -531,8 +659,8 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
         <div className="modal-form">
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Name <span className="required">*</span></label>
-              <input type="text" className="form-input" placeholder="Your full name"
+              <label className="form-label">Name (Optional)</label>
+              <input type="text" className="form-input" placeholder="Your full name (Optional)"
                 value={info.name} onChange={e => update('name', e.target.value)} />
             </div>
             <div className="form-group form-group-sm">
@@ -556,7 +684,7 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
               value={info.major} onChange={e => update('major', e.target.value)} />
           </div>
           <div className="form-group">
-            <label className="form-label">Academic Performance (GPA)</label>
+            <label className="form-label">Academic Performance (GPA) <span className="required">*</span></label>
             <select className="form-select" value={info.gpa} onChange={e => update('gpa', e.target.value)}>
               <option value="">Select GPA range</option>
               <option value="Below 3">Below 3</option>
@@ -567,7 +695,7 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
             </select>
           </div>
           <div className="form-group">
-            <label className="form-label">Self-perceived English Fluency</label>
+            <label className="form-label">Self-perceived English Fluency <span className="required">*</span></label>
             <div className="btn-group">
               {[1, 2, 3, 4, 5].map(n => (
                 <button key={n} className={`btn-toggle ${info.englishFluency === n ? 'active' : ''}`}
@@ -577,7 +705,7 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
             <div className="scale-labels"><span>Basic</span><span>Fluent</span></div>
           </div>
           <div className="form-group">
-            <label className="form-label">Languages Spoken Fluently</label>
+            <label className="form-label">Languages Spoken Fluently <span className="required">*</span></label>
             <input type="text" className="form-input" placeholder="e.g. English, Mandarin, Malay"
               value={info.languages} onChange={e => update('languages', e.target.value)} />
           </div>
@@ -614,7 +742,7 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
 // ─── DSB Display Screen ────────────────────────────────
 function DSBDisplayScreen({ digit, position, total, level }) {
   return (
-    <section className="screen" key={`dsb-display-${level}-${position}`}>
+    <section className="screen" key="dsb-display">
       <div className="screen-content">
         <div className="screen-header">
           <div className="task-badge">Task 1 of {TOTAL_TASKS}</div>
@@ -644,7 +772,7 @@ function DSBDisplayScreen({ digit, position, total, level }) {
 // ─── DSB Input Screen ──────────────────────────────────
 function DSBInputScreen({ level, sequenceLength, value, onChange, onSubmit, inputRef }) {
   return (
-    <section className="screen" key={`dsb-input-${level}`}>
+    <section className="screen" key="dsb-input">
       <div className="screen-content">
         <div className="screen-header">
           <div className="task-badge">Task 1 of {TOTAL_TASKS}</div>
@@ -656,12 +784,20 @@ function DSBInputScreen({ level, sequenceLength, value, onChange, onSubmit, inpu
         <div className="dsb-level-badge">Level {level}</div>
         <div className="dsb-input-wrap">
           <input ref={inputRef} type="text" inputMode="numeric" pattern="[0-9]*"
-            className="form-input dsb-input"
+            className={`form-input dsb-input ${value ? 'has-value' : ''}`}
             placeholder={`Enter ${sequenceLength} digits reversed…`}
             value={value} onChange={e => onChange(e.target.value.replace(/[^0-9]/g, ''))}
             maxLength={sequenceLength}
-            onKeyDown={e => { if (e.key === 'Enter' && value.length === sequenceLength) onSubmit(); }}
+            onKeyDown={e => {
+              if (e.key === 'Backspace') {
+                e.preventDefault(); // Prevent deleting one by one
+              }
+              if (e.key === 'Enter' && value.length === sequenceLength) onSubmit();
+            }}
           />
+          <button className="btn-text" onClick={() => onChange('')} style={{ display: 'block', margin: '8px auto', color: 'var(--text-secondary)', fontSize: '0.9rem', cursor: 'pointer', background: 'none', border: 'none', textDecoration: 'underline' }}>
+            Clear Entry
+          </button>
         </div>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <button className="btn btn-primary" disabled={value.length !== sequenceLength} onClick={onSubmit}>
@@ -679,7 +815,7 @@ function OSPANEquationScreen({ trial, trialIdx, totalTrials, pairIdx, timer, onA
   const eq = trial.equations[pairIdx];
   const pct = (timer.remaining / OSPAN_EQUATION_TIME) * 100;
   return (
-    <section className="screen" key={`ospan-eq-${trialIdx}-${pairIdx}`}>
+    <section className="screen" key="ospan-equation">
       <div className="screen-content">
         <div className="screen-header">
           <div className="task-badge">Task 2 of {TOTAL_TASKS} — Set {trialIdx + 1} of {totalTrials}</div>
@@ -689,7 +825,7 @@ function OSPANEquationScreen({ trial, trialIdx, totalTrials, pairIdx, timer, onA
         <div className="ospan-timer-bar">
           <div className="ospan-timer-fill" style={{ width: `${pct}%` }} />
         </div>
-        <div className="ospan-equation-card">
+        <div className="ospan-equation-card" key={`${trialIdx}-${pairIdx}`}>
           <span className="ospan-equation-text">{eq.text}</span>
         </div>
         <div className="ospan-tf-buttons">
@@ -708,14 +844,14 @@ function OSPANEquationScreen({ trial, trialIdx, totalTrials, pairIdx, timer, onA
 // ─── OSPAN Letter Screen ───────────────────────────────
 function OSPANLetterScreen({ letter, pairIdx, totalPairs }) {
   return (
-    <section className="screen" key={`ospan-letter-${pairIdx}`}>
+    <section className="screen" key="ospan-letter">
       <div className="screen-content">
         <div className="screen-header">
           <div className="task-badge">Task 2 of {TOTAL_TASKS}</div>
           <h2>Remember This Letter</h2>
           <p className="screen-subtitle">Letter {pairIdx + 1} of {totalPairs}</p>
         </div>
-        <div className="ospan-letter-display">
+        <div className="ospan-letter-display" key={pairIdx}>
           <span className="ospan-letter">{letter}</span>
         </div>
       </div>
@@ -726,7 +862,7 @@ function OSPANLetterScreen({ letter, pairIdx, totalPairs }) {
 // ─── OSPAN Recall Screen ───────────────────────────────
 function OSPANRecallScreen({ trialIdx, totalTrials, setSize, selected, onSelect, onUndo, onClear, onSubmit }) {
   return (
-    <section className="screen" key={`ospan-recall-${trialIdx}`}>
+    <section className="screen" key="ospan-recall">
       <div className="screen-content">
         <div className="screen-header">
           <div className="task-badge">Task 2 of {TOTAL_TASKS} — Set {trialIdx + 1} of {totalTrials}</div>
@@ -763,7 +899,8 @@ function OSPANRecallScreen({ trialIdx, totalTrials, setSize, selected, onSelect,
 }
 
 
-function WritingScreen({ taskNum, totalTasks, title, subtitle, prompt, promptLabel, placeholder, timer, value, onChange, onSubmit, submitLabel, inputRef }) {
+function WritingScreen({ taskNum, totalTasks, title, instructions, rubrics, promptLabel, placeholder, timer, value, onChange, onSubmit, submitLabel, inputRef }) {
+  const [showRubrics, setShowRubrics] = useState(false);
   const wordCount = countWords(value);
 
   return (
@@ -772,7 +909,6 @@ function WritingScreen({ taskNum, totalTasks, title, subtitle, prompt, promptLab
         <div className="screen-header">
           <div className="task-badge">Task {taskNum} of {totalTasks}</div>
           <h2>{title}</h2>
-          <p className="screen-subtitle">{subtitle}</p>
         </div>
         <div className={`timer-display timer-large ${timer.timerClass}`}>
           <ClockIcon />
@@ -780,7 +916,24 @@ function WritingScreen({ taskNum, totalTasks, title, subtitle, prompt, promptLab
         </div>
         <div className="prompt-card">
           <div className="prompt-label">{promptLabel}</div>
-          <p className="prompt-text">&ldquo;{prompt}&rdquo;</p>
+          <p className="prompt-text" style={{ fontSize: '1.1rem', marginBottom: rubrics ? '1rem' : 0 }}>{instructions}</p>
+          {rubrics && (
+            <div className="rubrics-section">
+              <button
+                className="btn-text"
+                onClick={() => setShowRubrics(!showRubrics)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+              >
+                {showRubrics ? 'Hide Rubrics' : 'View Rubrics'}
+                <span style={{ transform: showRubrics ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s', fontSize: '0.8rem' }}>▼</span>
+              </button>
+              {showRubrics && (
+                <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                  {rubrics}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="textarea-wrapper">
           <textarea
@@ -853,6 +1006,10 @@ function ResultsScreen({ dsbResults = [], dsbMaxSpan = 0, ospanResults = [], arg
   const ospanMathCorrect = ospanResults.reduce((sum, r) => sum + r.mathCorrect, 0);
   const ospanMathTotal = ospanResults.reduce((sum, r) => sum + r.mathTotal, 0);
 
+  // DSB Stats
+  const dsbTotalCorrect = dsbResults.reduce((sum, r) => sum + (r.numCorrect || 0), 0);
+  const dsbTotalPossible = 21;
+
   // ── PDF Download ──
   function downloadPDF() {
     const doc = new jsPDF();
@@ -874,7 +1031,7 @@ function ResultsScreen({ dsbResults = [], dsbMaxSpan = 0, ospanResults = [], arg
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(20);
     doc.setFont('helvetica', 'bold');
-    doc.text('Intelligence Test — Results', margin, 27);
+    doc.text('LinkedIn Worthy Result Slip', margin, 27);
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -920,7 +1077,7 @@ function ResultsScreen({ dsbResults = [], dsbMaxSpan = 0, ospanResults = [], arg
     doc.setTextColor(99, 102, 241);
     doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Digit Span Backward — Max Span: ${dsbMaxSpan}`, margin, y);
+    doc.text(`Digit Span Backward — Score: ${dsbTotalCorrect}/${dsbTotalPossible}`, margin, y);
     y += 3;
     doc.line(margin, y, margin + contentWidth, y);
     y += 8;
@@ -1095,7 +1252,7 @@ function ResultsScreen({ dsbResults = [], dsbMaxSpan = 0, ospanResults = [], arg
     }
 
     const safeName = (demographicInfo.name || 'participant').replace(/[^a-zA-Z0-9]/g, '_');
-    doc.save(`Intelligence_Test_${safeName}.pdf`);
+    doc.save(`LinkedIn_Worthy_Result_Slip_${safeName}.pdf`);
   }
 
   return (
@@ -1114,7 +1271,7 @@ function ResultsScreen({ dsbResults = [], dsbMaxSpan = 0, ospanResults = [], arg
               <h3>Digit Span Backward</h3>
               <p className="result-subtitle">Working Memory Capacity</p>
             </div>
-            <div className="result-score-badge">Max: {dsbMaxSpan}</div>
+            <div className="result-score-badge">{dsbTotalCorrect}/{dsbTotalPossible}</div>
           </div>
           <div className="memo-words-list">
             {dsbResults.map((r, i) => (
