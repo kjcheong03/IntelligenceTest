@@ -676,7 +676,7 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
         </div>
         <div className="modal-form">
           <div className="form-group">
-            <label className="form-label">Name for results slip only</label>
+            <label className="form-label">Name (Optional, only if you want it in your result slip) </label>
             <input type="text" className="form-input" placeholder="Your full name"
               value={info.name} onChange={e => update('name', e.target.value)} />
           </div>
