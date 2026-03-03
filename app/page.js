@@ -8,7 +8,7 @@ const DSB_START_LEVEL = 5;
 const DSB_LEVELS = [5, 7, 9]; // Updated to [5, 7, 9]
 
 const OSPAN_LETTERS = ['F', 'H', 'J', 'K', 'L', 'N', 'P', 'Q', 'R', 'S', 'T', 'Y'];
-const OSPAN_EQUATION_TIME = 10;
+const OSPAN_EQUATION_TIME = 30;
 const OSPAN_LETTER_DISPLAY_MS = 1500;
 const OSPAN_SET_SIZES = [5, 7, 9]; // Updated to [5, 7, 9]
 
@@ -215,8 +215,8 @@ export default function Home() {
   const [screen, setScreen] = useState('welcome');
 
   const [demographicInfo, setDemographicInfo] = useState({
-    name: '', age: '', sex: '', major: '', gpa: '',
-    englishFluency: 3, languages: '', readingFreq: 4, writingFreq: 4,
+    name: '', universityYear: '', major: '', gpa: '',
+    englishFluency: 3, languages: '', readingHours: '', writingHours: '',
   });
 
   // DSB State
@@ -244,6 +244,9 @@ export default function Home() {
   const [creInput, setCreInput] = useState('');
   const [argResults, setArgResults] = useState(null);
   const [creResults, setCreResults] = useState(null);
+
+  // Feedback
+  const [feedbackInfo, setFeedbackInfo] = useState(null);
 
   // Loading
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -320,7 +323,7 @@ export default function Home() {
     // Setup Task 1 Interstitial
     setInterstitialInfo({
       title: 'Task 1: Digit Span Backward',
-      desc: 'You will see a sequence of digits. Remember them and type them in REVERSE order.',
+      desc: 'You will see a sequence of digits, displayed one by one. Remember them and type them in REVERSE order. Even if you cannot remember the full sequence, partial marks may be awarded.',
       onStart: () => setScreen('dsb-display')
     });
     setScreen('interstitial');
@@ -345,18 +348,26 @@ export default function Home() {
       setDsbMaxSpan(dsbLevel);
     }
 
-    // Move to next fixed level regardless of success/failure (battery style)
-    const nextIdx = dsbTrialIdx + 1;
-    if (nextIdx < DSB_LEVELS.length) {
-      setDsbTrialIdx(nextIdx);
-      const nextLevel = DSB_LEVELS[nextIdx];
-      setDsbLevel(nextLevel);
-      setDsbSequence(generateDSBSequence(nextLevel));
-      setDsbDisplayIndex(0);
-      setScreen('dsb-display');
-    } else {
-      startOSPAN();
-    }
+    setFeedbackInfo({
+      type: 'dsb',
+      correct: reversed,
+      user: userDigits,
+      onNext: () => {
+        const nextIdx = dsbTrialIdx + 1;
+        if (nextIdx < DSB_LEVELS.length) {
+          setDsbTrialIdx(nextIdx);
+          const nextLevel = DSB_LEVELS[nextIdx];
+          setDsbLevel(nextLevel);
+          setDsbSequence(generateDSBSequence(nextLevel));
+          setDsbDisplayIndex(0);
+          setScreen('dsb-display');
+        } else {
+          startOSPAN();
+        }
+        setFeedbackInfo(null);
+      }
+    });
+    setScreen('feedback');
   }
 
   // ── Start OSPAN ──
@@ -368,7 +379,7 @@ export default function Home() {
     // Setup Task 2 Interstitial
     setInterstitialInfo({
       title: 'Task 2: Operation Span',
-      desc: 'Solve math equations while remembering letters. Recall the letters in order after each set.',
+      desc: 'Solve math equations while remembering letters. One letter will be given after each math equation is answered. Recall the letters in order after each set.',
       onStart: () => {
         setScreen('ospan-equation');
         ospanEqTimer.start(OSPAN_EQUATION_TIME);
@@ -411,33 +422,36 @@ export default function Home() {
     const newResults = [...ospanResults, result];
     setOspanResults(newResults);
 
-    const nextIdx = ospanTrialIdx + 1;
-    if (nextIdx < ospanTrials.length) {
-      setOspanTrialIdx(nextIdx);
-      setOspanPairIdx(0);
-      setOspanRecalled([]);
-      setOspanEqResults([]); // Fix: Reset math results for the next set
-      hasAnsweredEq.current = false;
-
-      // Interstitial between OSPAN sets? User said "before every test start".
-      // Assuming Tasks. If sets, we could add here.
-      // Assuming Tasks for now.
-
-      setScreen('ospan-equation');
-      ospanEqTimer.start(OSPAN_EQUATION_TIME);
-    } else {
-      // Start Task 3 Interstitial
-      setInterstitialInfo({
-        title: 'Task 3: Argumentative Writing',
-        desc: 'Write an essay based on the prompt. You have 5 minutes.',
-        onStart: () => {
-          setScreen('writing-arg');
-          argTimer.start(WRITING_TIME);
-          setTimeout(() => argRef.current?.focus(), 100);
+    setFeedbackInfo({
+      type: 'ospan',
+      correct: trial.letters,
+      user: ospanRecalled,
+      onNext: () => {
+        const nextIdx = ospanTrialIdx + 1;
+        if (nextIdx < ospanTrials.length) {
+          setOspanTrialIdx(nextIdx);
+          setOspanPairIdx(0);
+          setOspanRecalled([]);
+          setOspanEqResults([]);
+          hasAnsweredEq.current = false;
+          setScreen('ospan-equation');
+          ospanEqTimer.start(OSPAN_EQUATION_TIME);
+        } else {
+          setInterstitialInfo({
+            title: 'Task 3: Argumentative Writing',
+            desc: 'Write an essay based on the prompt. You have 5 minutes.',
+            onStart: () => {
+              setScreen('writing-arg');
+              argTimer.start(WRITING_TIME);
+              setTimeout(() => argRef.current?.focus(), 100);
+            }
+          });
+          setScreen('interstitial');
         }
-      });
-      setScreen('interstitial');
-    }
+        setFeedbackInfo(null);
+      }
+    });
+    setScreen('feedback');
   }
 
   // ── Submit Argumentative ──
@@ -520,6 +534,9 @@ export default function Home() {
         <DSBInputScreen level={dsbLevel} sequenceLength={dsbSequence.length}
           value={dsbUserInput} onChange={setDsbUserInput} onSubmit={submitDSBAnswer} inputRef={dsbInputRef} />
       )}
+      {screen === 'feedback' && feedbackInfo && (
+        <FeedbackScreen info={feedbackInfo} />
+      )}
 
       {screen === 'ospan-equation' && ospanTrials[ospanTrialIdx] && (
         <OSPANEquationScreen trial={ospanTrials[ospanTrialIdx]} trialIdx={ospanTrialIdx}
@@ -550,10 +567,10 @@ export default function Home() {
           rubrics={
             <>
               <strong>Rubrics for argumentative writing (each section is scored out of 4)</strong><br />
-              1. Thesis &amp; Focus<br />
-              2. Evidence &amp; Support<br />
-              3. Structure &amp; Coherence<br />
-              4. Syntax &amp; Fluency<br />
+              1. Clarity of Thesis & Focus<br />
+              2. Proper use of Relevant Evidence & Support<br />
+              3. Structure and Flow of Idea<br />
+              4. Grammatical Errors<br />
               5. Word Choice
             </>
           }
@@ -573,12 +590,13 @@ export default function Home() {
             <>
               <strong>Rubrics for creative writing (each section is scored out of 4)</strong><br />
               1. Originality<br />
-              2. Imagery &amp; Detail<br />
-              3. Narrative Structure<br />
-              4. Figurative Language<br />
-              5. Pacing &amp; Rhythm
+              2. Use of imagery & Detail<br />
+              3. Narrative Flow<br />
+              4. Use of Figurative Language<br />
+              5. Proper Pacing
             </>
           }
+          example="Cold slips under your sleeves like an uninvited whisper, tightening your skin and turning your breath into something small and careful. It settles in your bones, a quiet ache that makes even silence feel sharp and fragile."
           promptLabel="Instructions" placeholder="Begin your story..."
           timer={creTimer} value={creInput} onChange={setCreInput}
           onSubmit={submitCreative} submitLabel="Submit & View Results" inputRef={creRef} />
@@ -644,7 +662,7 @@ function WelcomeScreen({ onStart }) {
 // ─── Demographic Modal ─────────────────────────────────
 function DemographicModal({ info, onChange, onSubmit, onClose }) {
   const update = (field, value) => onChange({ ...info, [field]: value });
-  const isValid = !!(info.age && info.sex && info.major?.trim() && info.gpa && info.languages?.trim());
+  const isValid = !!(info.universityYear && info.major?.trim() && info.gpa && info.languages?.trim() && info.readingHours && info.writingHours);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -657,31 +675,29 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
           <p className="screen-subtitle">Please fill in your details before starting the assessment.</p>
         </div>
         <div className="modal-form">
+          <div className="form-group">
+            <label className="form-label">Name for results slip only</label>
+            <input type="text" className="form-input" placeholder="Your full name"
+              value={info.name} onChange={e => update('name', e.target.value)} />
+          </div>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Name (Optional)</label>
-              <input type="text" className="form-input" placeholder="Your full name (Optional)"
-                value={info.name} onChange={e => update('name', e.target.value)} />
+              <label className="form-label">University year <span className="required">*</span></label>
+              <select className="form-select" value={info.universityYear} onChange={e => update('universityYear', e.target.value)}>
+                <option value="">Select year</option>
+                <option value="Y1">Y1</option>
+                <option value="Y2">Y2</option>
+                <option value="Y3">Y3</option>
+                <option value="Y4">Y4</option>
+                <option value="Graduate">Graduate</option>
+                <option value="Other/NA">Other/NA</option>
+              </select>
             </div>
-            <div className="form-group form-group-sm">
-              <label className="form-label">Age <span className="required">*</span></label>
-              <input type="number" className="form-input" placeholder="Age" min="1" max="120"
-                value={info.age} onChange={e => update('age', e.target.value)} />
+            <div className="form-group">
+              <label className="form-label">Major / Faculty <span className="required">*</span></label>
+              <input type="text" className="form-input" placeholder="e.g. Computer Science"
+                value={info.major} onChange={e => update('major', e.target.value)} />
             </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Sex <span className="required">*</span></label>
-            <div className="btn-group">
-              {['Male', 'Female'].map(s => (
-                <button key={s} className={`btn-toggle ${info.sex === s ? 'active' : ''}`}
-                  onClick={() => update('sex', s)}>{s}</button>
-              ))}
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Major / Faculty</label>
-            <input type="text" className="form-input" placeholder="e.g. Computer Science"
-              value={info.major} onChange={e => update('major', e.target.value)} />
           </div>
           <div className="form-group">
             <label className="form-label">Academic Performance (GPA) <span className="required">*</span></label>
@@ -711,22 +727,24 @@ function DemographicModal({ info, onChange, onSubmit, onClose }) {
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Reading Frequency / Week</label>
-              <div className="btn-group">
-                {[1, 2, 3, 4, 5, 6, 7].map(n => (
-                  <button key={n} className={`btn-toggle btn-toggle-sm ${info.readingFreq === n ? 'active' : ''}`}
-                    onClick={() => update('readingFreq', n)}>{n}</button>
-                ))}
-              </div>
+              <label className="form-label">Reading hours/week <span className="required">*</span></label>
+              <select className="form-select" value={info.readingHours} onChange={e => update('readingHours', e.target.value)}>
+                <option value="">Select</option>
+                <option value="<2">&lt;2</option>
+                <option value="2–5">2–5</option>
+                <option value="5–10">5–10</option>
+                <option value=">10">&gt;10</option>
+              </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Writing Frequency / Week</label>
-              <div className="btn-group">
-                {[1, 2, 3, 4, 5, 6, 7].map(n => (
-                  <button key={n} className={`btn-toggle btn-toggle-sm ${info.writingFreq === n ? 'active' : ''}`}
-                    onClick={() => update('writingFreq', n)}>{n}</button>
-                ))}
-              </div>
+              <label className="form-label">Writing hours/week <span className="required">*</span></label>
+              <select className="form-select" value={info.writingHours} onChange={e => update('writingHours', e.target.value)}>
+                <option value="">Select</option>
+                <option value="<2">&lt;2</option>
+                <option value="2–5">2–5</option>
+                <option value="5–10">5–10</option>
+                <option value=">10">&gt;10</option>
+              </select>
             </div>
           </div>
         </div>
@@ -771,9 +789,11 @@ function DSBDisplayScreen({ digit, position, total, level }) {
 
 // ─── DSB Input Screen ──────────────────────────────────
 function DSBInputScreen({ level, sequenceLength, value, onChange, onSubmit, inputRef }) {
+  const displayValue = value.split('').map((char, i) => (i === value.length - 1 ? char : '*')).join('');
+
   return (
     <section className="screen" key="dsb-input">
-      <div className="screen-content">
+      <div className="screen-content" style={{ textAlign: 'center' }}>
         <div className="screen-header">
           <div className="task-badge">Task 1 of {TOTAL_TASKS}</div>
           <h2>Type Digits in Reverse</h2>
@@ -782,23 +802,49 @@ function DSBInputScreen({ level, sequenceLength, value, onChange, onSubmit, inpu
           </p>
         </div>
         <div className="dsb-level-badge">Level {level}</div>
-        <div className="dsb-input-wrap">
-          <input ref={inputRef} type="text" inputMode="numeric" pattern="[0-9]*"
-            className={`form-input dsb-input ${value ? 'has-value' : ''}`}
-            placeholder={`Enter ${sequenceLength} digits reversed…`}
-            value={value} onChange={e => onChange(e.target.value.replace(/[^0-9]/g, ''))}
-            maxLength={sequenceLength}
+
+        <div className="dsb-input-wrap" style={{ position: 'relative', maxWidth: '400px', margin: '0 auto 2rem' }}>
+          <div className="dsb-masked-display" style={{
+            fontSize: '3rem',
+            letterSpacing: '0.6rem',
+            fontFamily: 'var(--font-mono), monospace',
+            minHeight: '5rem',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-accent)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--text-primary)',
+            fontWeight: '700'
+          }}>
+            {displayValue || <span style={{ opacity: 0.2, fontSize: '1.2rem', letterSpacing: 'normal' }}>Start typing reversed digits…</span>}
+          </div>
+          <input
+            ref={inputRef}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            style={{
+              position: 'absolute',
+              opacity: 0,
+              top: 0, left: 0, width: '100%', height: '100%',
+              cursor: 'text'
+            }}
+            value={value}
+            onChange={e => {
+              const val = e.target.value.replace(/[^0-9]/g, '');
+              if (val.length <= sequenceLength) onChange(val);
+            }}
             onKeyDown={e => {
-              if (e.key === 'Backspace') {
-                e.preventDefault(); // Prevent deleting one by one
-              }
               if (e.key === 'Enter' && value.length === sequenceLength) onSubmit();
             }}
           />
-          <button className="btn-text" onClick={() => onChange('')} style={{ display: 'block', margin: '8px auto', color: 'var(--text-secondary)', fontSize: '0.9rem', cursor: 'pointer', background: 'none', border: 'none', textDecoration: 'underline' }}>
+          <button className="btn-text" onClick={() => onChange('')} style={{ display: 'block', margin: '12px auto', color: 'var(--text-secondary)', fontSize: '0.9rem', cursor: 'pointer', background: 'none', border: 'none', textDecoration: 'underline' }}>
             Clear Entry
           </button>
         </div>
+
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <button className="btn btn-primary" disabled={value.length !== sequenceLength} onClick={onSubmit}>
             <span>Submit</span>
@@ -897,10 +943,58 @@ function OSPANRecallScreen({ trialIdx, totalTrials, setSize, selected, onSelect,
     </section>
   );
 }
+function FeedbackScreen({ info }) {
+  const { type, correct, user, onNext } = info;
+  return (
+    <section className="screen feedback-screen" key="feedback">
+      <div className="screen-content" style={{ textAlign: 'center' }}>
+        <div className="screen-header">
+          <div className="task-badge">Feedback</div>
+          <h2>Check your response against the correct answer</h2>
+        </div>
+
+        <div className="feedback-container">
+          <div className="feedback-row">
+            <span className="feedback-label">Correct:</span>
+            <div className="feedback-items">
+              {correct.map((item, i) => (
+                <span key={i} className="feedback-item">{item}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="feedback-row">
+            <span className="feedback-label">Your Answer:</span>
+            <div className="feedback-items">
+              {correct.map((item, i) => {
+                const userVal = user[i];
+                const isMatch = userVal === item;
+                const isEmpty = userVal === undefined;
+                return (
+                  <span key={i} className={`feedback-item ${isEmpty ? 'feedback-empty' : isMatch ? 'feedback-correct' : 'feedback-wrong'}`}>
+                    {isEmpty ? '—' : userVal}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '3rem' }}>
+          <button className="btn btn-primary btn-lg" onClick={onNext}>
+            <span>Continue</span>
+            <ArrowIcon />
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 
-function WritingScreen({ taskNum, totalTasks, title, instructions, rubrics, promptLabel, placeholder, timer, value, onChange, onSubmit, submitLabel, inputRef }) {
+function WritingScreen({ taskNum, totalTasks, title, instructions, rubrics, example, promptLabel, placeholder, timer, value, onChange, onSubmit, submitLabel, inputRef }) {
   const [showRubrics, setShowRubrics] = useState(false);
+  const [showExample, setShowExample] = useState(false);
   const wordCount = countWords(value);
 
   return (
@@ -918,20 +1012,43 @@ function WritingScreen({ taskNum, totalTasks, title, instructions, rubrics, prom
           <div className="prompt-label">{promptLabel}</div>
           <p className="prompt-text" style={{ fontSize: '1.1rem', marginBottom: rubrics ? '1rem' : 0 }}>{instructions}</p>
           {rubrics && (
-            <div className="rubrics-section">
-              <button
-                className="btn-text"
-                onClick={() => setShowRubrics(!showRubrics)}
-                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
-              >
-                {showRubrics ? 'Hide Rubrics' : 'View Rubrics'}
-                <span style={{ transform: showRubrics ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s', fontSize: '0.8rem' }}>▼</span>
-              </button>
-              {showRubrics && (
-                <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                  {rubrics}
+            <div className="rubrics-section" style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+              <div className="rubrics-toggle">
+                <button
+                  className="btn-text"
+                  onClick={() => setShowRubrics(!showRubrics)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+                >
+                  {showRubrics ? 'Hide Rubrics' : 'View Rubrics'}
+                  <span style={{ transform: showRubrics ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s', fontSize: '0.8rem' }}>▼</span>
+                </button>
+              </div>
+
+              {example && (
+                <div className="example-toggle">
+                  <button
+                    className="btn-text"
+                    onClick={() => setShowExample(!showExample)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+                  >
+                    {showExample ? 'Hide Example' : 'View Example'}
+                    <span style={{ transform: showExample ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s', fontSize: '0.8rem' }}>▼</span>
+                  </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {showRubrics && (
+            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+              {rubrics}
+            </div>
+          )}
+
+          {showExample && example && (
+            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.6', fontStyle: 'italic', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '8px' }}>
+              <strong>Good Answer Example (Describe cold):</strong><br />
+              &ldquo;{example}&rdquo;
             </div>
           )}
         </div>
@@ -981,17 +1098,17 @@ function ResultsScreen({ dsbResults = [], dsbMaxSpan = 0, ospanResults = [], arg
   const argDimensions = [
     { key: 'thesis_focus', label: 'Thesis & Focus' },
     { key: 'evidence_support', label: 'Evidence & Support' },
-    { key: 'structure_coherence', label: 'Structure & Coherence' },
-    { key: 'syntax_fluency', label: 'Syntax & Fluency' },
+    { key: 'structure_flow', label: 'Structure & Flow' },
+    { key: 'grammatical_errors', label: 'Grammatical Errors' },
     { key: 'word_choice', label: 'Word Choice' },
   ];
 
   const creDimensions = [
     { key: 'originality', label: 'Originality' },
     { key: 'imagery_detail', label: 'Imagery & Detail' },
-    { key: 'narrative_structure', label: 'Narrative Structure' },
+    { key: 'narrative_flow', label: 'Narrative Flow' },
     { key: 'figurative_language', label: 'Figurative Language' },
-    { key: 'pacing_rhythm', label: 'Pacing & Rhythm' },
+    { key: 'proper_pacing', label: 'Proper Pacing' },
   ];
 
   const argTotal = argResults?.scores ? Object.values(argResults.scores).reduce((a, b) => a + b, 0) : 0;
@@ -1054,14 +1171,13 @@ function ResultsScreen({ dsbResults = [], dsbMaxSpan = 0, ospanResults = [], arg
     doc.setFont('helvetica', 'normal');
     const demoFields = [
       ['Name', demographicInfo.name || '—'],
-      ['Age', demographicInfo.age || '—'],
-      ['Sex', demographicInfo.sex || '—'],
+      ['University Year', demographicInfo.universityYear || '—'],
       ['Major / Faculty', demographicInfo.major || '—'],
       ['GPA Range', demographicInfo.gpa || '—'],
       ['English Fluency', `${demographicInfo.englishFluency} / 5`],
       ['Languages', demographicInfo.languages || '—'],
-      ['Reading Freq.', `${demographicInfo.readingFreq}x / week`],
-      ['Writing Freq.', `${demographicInfo.writingFreq}x / week`],
+      ['Reading Freq.', demographicInfo.readingHours || '—'],
+      ['Writing Freq.', demographicInfo.writingHours || '—'],
     ];
     demoFields.forEach(([label, value]) => {
       doc.setFont('helvetica', 'bold');

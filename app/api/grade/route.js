@@ -11,17 +11,18 @@ const CRE_SYSTEM_PROMPT = `You are an expert creative writing evaluator. You mus
 
 function buildArgPrompt(prompt, text) {
     return `You are an expert writing evaluator. Grade the following argumentative paragraph based on this rubric. Each dimension is scored 1-4.
+Ensure marking is consistent with the provided examples and strictly adheres to the rubric levels.
 
 PROMPT given to the writer: "${prompt}"
 
 RUBRIC:
-1. Thesis & Focus: 4=Clear, arguable, focused thesis | 3=Clear thesis, may be broad | 2=Unclear or non-arguable thesis | 1=No discernible thesis
-2. Evidence & Support: 4=Strong, relevant, well-explained | 3=Relevant but may lack explanation | 2=Weak or irrelevant | 1=No evidence provided
-3. Structure & Coherence: 4=Logical, clear flow with effective transitions | 3=Generally organized, some lapses | 2=Disorganized or difficult to follow | 1=Lacks any clear structure
-4. Syntax & Fluency: 4=Varied, complex sentences; flows smoothly | 3=Mostly clear, some variety | 2=Simple, repetitive, or awkward | 1=Incoherent sentences
+1. Clarity of Thesis & Focus: 4=Clear, arguable, focused thesis | 3=Clear thesis, may be broad | 2=Unclear or non-arguable thesis | 1=No discernible thesis
+2. Relevant Evidence & Support: 4=Strong, relevant, well-explained evidence | 3=Relevant but may lack explanation | 2=Weak or irrelevant | 1=No evidence provided
+3. Structure and Flow of Idea: 4=Logical, clear flow with effective transitions | 3=Generally organized, some lapses | 2=Disorganized or difficult to follow | 1=Lacks any clear structure
+4. Grammatical Errors: 4=No errors; complex, fluid syntax | 3=Few minor errors | 2=Noticeable errors that hinder flow | 1=Frequent errors that make it incoherent
 5. Word Choice: 4=Precise, persuasive, appropriate language | 3=Appropriate but general | 2=Vague or inappropriate | 1=Severely limited vocabulary
 
-EXAMPLES FOR REFERENCE:
+EXAMPLES FOR REFERENCE (With example grades):
 5/20 (Weak)
 Social media is sometimes good but mostly bad. People use it too much and it causes many problems. It makes people addicted and they don’t talk to others. Also, fake news spreads easily. I think it is more harmful than useful because it ruins communication between people. Overall, social media is not very good and people should stop using it so much.
 Comments: Unclear focus, repetitive wording, no evidence or structure beyond surface-level claims. Very basic vocabulary and weak syntax.
@@ -48,8 +49,8 @@ Respond in JSON format:
   "scores": {
     "thesis_focus": <1-4>,
     "evidence_support": <1-4>,
-    "structure_coherence": <1-4>,
-    "syntax_fluency": <1-4>,
+    "structure_flow": <1-4>,
+    "grammatical_errors": <1-4>,
     "word_choice": <1-4>
   },
   "feedback": "<2-3 sentences of overall feedback>"
@@ -58,17 +59,21 @@ Respond in JSON format:
 
 function buildCrePrompt(prompt, text) {
     return `You are an expert creative writing evaluator. Grade the following creative story opening based on this rubric. Each dimension is scored 1-4.
+Ensure marking is consistent with the provided examples and strictly adheres to the rubric levels.
 
 PROMPT given to the writer: "${prompt}"
 
 RUBRIC:
 1. Originality: 4=Highly imaginative and unconventional concept | 3=Conventional concept with unique elements | 2=Predictable or clichéd | 1=Lacks any originality
-2. Imagery & Detail: 4=Rich, specific sensory details create a vivid world | 3=Uses general sensory details | 2=Minimal or generic details | 1=No sensory details
-3. Narrative Structure: 4=Coherent plot with clear setup and progression | 3=Basic plot present but may be underdeveloped | 2=Plot is confusing or disjointed | 1=No discernible plot
-4. Figurative Language: 4=Effective and original use of metaphor, simile, etc. | 3=Uses simple or common figurative language | 2=Figurative language is weak or misused | 1=No figurative language
-5. Pacing & Rhythm: 4=Sentence structure is varied to control pacing and mood | 3=Some variation in sentence structure | 2=Monotonous or awkward sentence structure | 1=Incoherent sentences
+2. Use of imagery & Detail: 4=Rich, specific sensory details create a vivid world | 3=Uses general sensory details | 2=Minimal or generic details | 1=No sensory details
+3. Narrative Flow: 4=Sentence structure is varied to control pacing and mood; fluid transitions | 3=Some variation in sentence structure; mostly clear | 2=Monotonous or disjointed | 1=Incoherent sentences
+4. Use of Figurative Language: 4=Effective and original use of metaphor, simile, etc. | 3=Uses simple or common figurative language | 2=Figurative language is weak or misused | 1=No figurative language
+5. Proper Pacing: 4=Pacing is perfect for the mood, with strong rhythm | 3=Good pacing with minor lapses | 2=Pacing is confusing or disjointed | 1=No clear pacing
 
-EXAMPLES FOR REFERENCE:
+REFERENCE EXAMPLE FOR A GOOD ANSWER [Describe cold]: 
+"Cold slips under your sleeves like an uninvited whisper, tightening your skin and turning your breath into something small and careful. It settles in your bones, a quiet ache that makes even silence feel sharp and fragile."
+
+EXAMPLES FOR REFERENCE (With example grades):
 5/20 (Weak)
 Red is a colour that is bright and strong. It is the colour of apples and blood. It feels hot and maybe a little angry. People use red to show danger or love. It is a very powerful colour. If you could feel it, maybe it would be like touching something warm.
 Comments: Basic and literal; no vivid imagery or originality. Reads like a dictionary description.
@@ -95,9 +100,9 @@ Respond in JSON format:
   "scores": {
     "originality": <1-4>,
     "imagery_detail": <1-4>,
-    "narrative_structure": <1-4>,
+    "narrative_flow": <1-4>,
     "figurative_language": <1-4>,
-    "pacing_rhythm": <1-4>
+    "proper_pacing": <1-4>
   },
   "feedback": "<2-3 sentences of overall feedback>"
 }`;
